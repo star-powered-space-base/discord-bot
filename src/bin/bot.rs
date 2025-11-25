@@ -250,6 +250,15 @@ impl EventHandler for Handler {
                                             .add_string_choice("enabled - Respond when @mentioned", "enabled")
                                             .add_string_choice("disabled - Ignore mentions", "disabled")
                                     }
+                                    // Startup notification settings (global)
+                                    "startup_notification" => {
+                                        response
+                                            .add_string_choice("enabled - Send notification on startup", "enabled")
+                                            .add_string_choice("disabled - No startup notification", "disabled")
+                                    }
+                                    // For ID fields, don't show autocomplete - user must type the ID directly
+                                    // Return empty response so Discord shows the text input
+                                    "startup_notify_owner_id" | "startup_notify_channel_id" => response,
                                     _ => response
                                 }
                             })
@@ -308,8 +317,8 @@ async fn main() -> Result<()> {
     // Parse guild ID if provided for development mode
     let guild_id = config.discord_guild_id.as_ref().and_then(|id| id.parse::<u64>().ok()).map(GuildId);
 
-    // Create startup notifier
-    let startup_notifier = StartupNotifier::new(&config);
+    // Create startup notifier (reads config from database)
+    let startup_notifier = StartupNotifier::new(Arc::new(database.clone()));
 
     let handler = Handler::new(command_handler, component_handler, guild_id, startup_notifier);
 

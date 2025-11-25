@@ -90,6 +90,10 @@ fn create_set_guild_setting_command() -> CreateApplicationCommand {
                 .add_string_choice("audio_transcription_mode", "audio_transcription_mode")
                 .add_string_choice("audio_transcription_output", "audio_transcription_output")
                 .add_string_choice("mention_responses", "mention_responses")
+                // Global bot settings (stored in bot_settings table)
+                .add_string_choice("startup_notification", "startup_notification")
+                .add_string_choice("startup_notify_owner_id", "startup_notify_owner_id")
+                .add_string_choice("startup_notify_channel_id", "startup_notify_channel_id")
         })
         .create_option(|option| {
             option

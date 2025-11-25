@@ -371,6 +371,16 @@ impl Database {
              ON channel_settings(channel_id)",
         )?;
 
+        // Bot Settings (for global bot configuration, not per-guild)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS bot_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key TEXT NOT NULL UNIQUE,
+                setting_value TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+        )?;
+
         Ok(())
     }
 
@@ -1046,6 +1056,33 @@ impl Database {
         )?;
         statement.bind((1, guild_id))?;
         statement.bind((2, setting_key))?;
+
+        if let Ok(State::Row) = statement.next() {
+            Ok(Some(statement.read::<String, _>(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    // Bot Settings Methods (global, not per-guild)
+    pub async fn set_bot_setting(&self, setting_key: &str, setting_value: &str) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "INSERT OR REPLACE INTO bot_settings (setting_key, setting_value, updated_at)
+             VALUES (?, ?, CURRENT_TIMESTAMP)"
+        )?;
+        statement.bind((1, setting_key))?;
+        statement.bind((2, setting_value))?;
+        statement.next()?;
+        Ok(())
+    }
+
+    pub async fn get_bot_setting(&self, setting_key: &str) -> Result<Option<String>> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "SELECT setting_value FROM bot_settings WHERE setting_key = ?"
+        )?;
+        statement.bind((1, setting_key))?;
 
         if let Ok(State::Row) = statement.next() {
             Ok(Some(statement.read::<String, _>(0)?))

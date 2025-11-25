@@ -1916,6 +1916,28 @@ Use the buttons below for more help or to try custom prompts!"#;
                     (false, "Invalid value. Use: `enabled` or `disabled`.")
                 }
             }
+            // Global bot settings (stored in bot_settings table)
+            "startup_notification" => {
+                if ["enabled", "disabled"].contains(&value.as_str()) {
+                    (true, "")
+                } else {
+                    (false, "Invalid value. Use: `enabled` or `disabled`.")
+                }
+            }
+            "startup_notify_owner_id" => {
+                if !value.is_empty() && value.parse::<u64>().is_ok() {
+                    (true, "")
+                } else {
+                    (false, "Invalid user ID. Enter a valid Discord user ID (numeric). Get it by right-clicking your username with Developer Mode enabled.")
+                }
+            }
+            "startup_notify_channel_id" => {
+                if !value.is_empty() && value.parse::<u64>().is_ok() {
+                    (true, "")
+                } else {
+                    (false, "Invalid channel ID. Enter a valid Discord channel ID (numeric). Get it by right-clicking the channel with Developer Mode enabled.")
+                }
+            }
             _ => (false, "Unknown setting. Use `/settings` to see available options."),
         };
 
@@ -1932,18 +1954,28 @@ Use the buttons below for more help or to try custom prompts!"#;
             return Ok(());
         }
 
-        info!("[{request_id}] Setting guild {guild_id} setting '{setting}' to '{value}'");
+        // Check if this is a global bot setting or a guild setting
+        let is_global_setting = matches!(
+            setting.as_str(),
+            "startup_notification" | "startup_notify_owner_id" | "startup_notify_channel_id"
+        );
 
-        // Set the guild setting
-        self.database.set_guild_setting(&guild_id, &setting, &value).await?;
+        if is_global_setting {
+            info!("[{request_id}] Setting global bot setting '{setting}' to '{value}'");
+            self.database.set_bot_setting(&setting, &value).await?;
+        } else {
+            info!("[{request_id}] Setting guild {guild_id} setting '{setting}' to '{value}'");
+            self.database.set_guild_setting(&guild_id, &setting, &value).await?;
+        }
 
+        let scope = if is_global_setting { "Global" } else { "Guild" };
         command
             .create_interaction_response(&ctx.http, |response| {
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|message| {
                         message.content(format!(
-                            "✅ Guild setting `{setting}` set to **{value}**"
+                            "✅ {scope} setting `{setting}` set to **{value}**"
                         ))
                     })
             })

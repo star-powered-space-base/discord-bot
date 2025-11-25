@@ -2,15 +2,17 @@
 //!
 //! Sends rich embed notifications when bot comes online.
 //! Supports DM to bot owner and/or specific guild channels.
+//! Configuration is stored in the database and managed via /set_guild_setting.
 //!
-//! - **Version**: 1.0.0
+//! - **Version**: 1.1.0
 //! - **Since**: 0.4.0
 //! - **Toggleable**: true
 //!
 //! ## Changelog
+//! - 1.1.0: Moved configuration from env vars to database
 //! - 1.0.0: Initial release with DM and channel support, rich embeds
 
-use crate::config::Config;
+use crate::database::Database;
 use crate::features::{get_bot_version, get_features};
 use log::{info, warn};
 use serenity::builder::CreateEmbed;
@@ -19,6 +21,7 @@ use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::utils::Color;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Git commits embedded at compile time by build.rs
 const RECENT_COMMITS: &str = env!("GIT_RECENT_COMMITS");
@@ -28,19 +31,13 @@ static FIRST_READY: AtomicBool = AtomicBool::new(true);
 
 /// Handles sending startup notifications to configured destinations
 pub struct StartupNotifier {
-    owner_id: Option<u64>,
-    channel_id: Option<u64>,
-    enabled: bool,
+    database: Arc<Database>,
 }
 
 impl StartupNotifier {
-    /// Creates a new StartupNotifier from configuration
-    pub fn new(config: &Config) -> Self {
-        Self {
-            owner_id: config.startup_notify_owner_id,
-            channel_id: config.startup_notify_channel_id,
-            enabled: config.startup_notifications_enabled,
-        }
+    /// Creates a new StartupNotifier with database access
+    pub fn new(database: Arc<Database>) -> Self {
+        Self { database }
     }
 
     /// Sends startup notifications if enabled and this is the first Ready event
@@ -51,38 +48,64 @@ impl StartupNotifier {
             return;
         }
 
-        if !self.enabled {
+        // Read settings from database
+        let enabled = self
+            .database
+            .get_bot_setting("startup_notification")
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v == "enabled")
+            .unwrap_or(false);
+
+        if !enabled {
             info!("Startup notifications disabled");
             return;
         }
 
-        if self.owner_id.is_none() && self.channel_id.is_none() {
+        let owner_id = self
+            .database
+            .get_bot_setting("startup_notify_owner_id")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<u64>().ok());
+
+        let channel_id = self
+            .database
+            .get_bot_setting("startup_notify_channel_id")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<u64>().ok());
+
+        if owner_id.is_none() && channel_id.is_none() {
             info!("Startup notifications enabled but no destinations configured");
             return;
         }
 
-        let embed = self.build_embed(ready);
+        let embed = Self::build_embed(ready);
 
         // Send to owner DM
-        if let Some(owner_id) = self.owner_id {
-            if let Err(e) = self.send_to_owner(http, owner_id, embed.clone()).await {
-                warn!("Failed to send startup DM to owner {}: {}", owner_id, e);
+        if let Some(oid) = owner_id {
+            if let Err(e) = Self::send_to_owner(http, oid, embed.clone()).await {
+                warn!("Failed to send startup DM to owner {}: {}", oid, e);
             }
         }
 
         // Send to channel
-        if let Some(channel_id) = self.channel_id {
-            if let Err(e) = self.send_to_channel(http, channel_id, embed).await {
+        if let Some(cid) = channel_id {
+            if let Err(e) = Self::send_to_channel(http, cid, embed).await {
                 warn!(
                     "Failed to send startup notification to channel {}: {}",
-                    channel_id, e
+                    cid, e
                 );
             }
         }
     }
 
     /// Builds the rich embed for the startup notification
-    fn build_embed(&self, ready: &Ready) -> CreateEmbed {
+    fn build_embed(ready: &Ready) -> CreateEmbed {
         let version = get_bot_version();
         let features = get_features();
         let timestamp = std::time::SystemTime::now()
@@ -146,12 +169,7 @@ impl StartupNotifier {
     }
 
     /// Sends the embed to the bot owner via DM
-    async fn send_to_owner(
-        &self,
-        http: &Http,
-        owner_id: u64,
-        embed: CreateEmbed,
-    ) -> anyhow::Result<()> {
+    async fn send_to_owner(http: &Http, owner_id: u64, embed: CreateEmbed) -> anyhow::Result<()> {
         let user = UserId(owner_id);
         let dm = user.create_dm_channel(http).await?;
         dm.send_message(http, |m| m.set_embed(embed)).await?;
@@ -161,7 +179,6 @@ impl StartupNotifier {
 
     /// Sends the embed to a specific channel
     async fn send_to_channel(
-        &self,
         http: &Http,
         channel_id: u64,
         embed: CreateEmbed,
