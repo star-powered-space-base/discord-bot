@@ -14,6 +14,7 @@ use persona::database::Database;
 use persona::message_components::MessageComponentHandler;
 use persona::personas::PersonaManager;
 use persona::reminder_scheduler::ReminderScheduler;
+use persona::startup_notification::StartupNotifier;
 use persona::system_info::metrics_collection_loop;
 use persona::commands::{register_global_commands, register_guild_commands};
 use serenity::model::id::GuildId;
@@ -22,14 +23,21 @@ struct Handler {
     command_handler: Arc<CommandHandler>,
     component_handler: Arc<MessageComponentHandler>,
     guild_id: Option<GuildId>,
+    startup_notifier: StartupNotifier,
 }
 
 impl Handler {
-    fn new(command_handler: CommandHandler, component_handler: MessageComponentHandler, guild_id: Option<GuildId>) -> Self {
+    fn new(
+        command_handler: CommandHandler,
+        component_handler: MessageComponentHandler,
+        guild_id: Option<GuildId>,
+        startup_notifier: StartupNotifier,
+    ) -> Self {
         Handler {
             command_handler: Arc::new(command_handler),
             component_handler: Arc::new(component_handler),
             guild_id,
+            startup_notifier,
         }
     }
 }
@@ -81,9 +89,10 @@ impl EventHandler for Handler {
                 info!("✅ Successfully registered slash commands globally (may take up to 1 hour to propagate)");
             }
         }
+
+        // Send startup notification if enabled
+        self.startup_notifier.send_if_enabled(&ctx.http, &ready).await;
     }
-
-
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         match interaction {
@@ -300,7 +309,10 @@ async fn main() -> Result<()> {
     // Parse guild ID if provided for development mode
     let guild_id = config.discord_guild_id.as_ref().and_then(|id| id.parse::<u64>().ok()).map(GuildId);
 
-    let handler = Handler::new(command_handler, component_handler, guild_id);
+    // Create startup notifier
+    let startup_notifier = StartupNotifier::new(&config);
+
+    let handler = Handler::new(command_handler, component_handler, guild_id, startup_notifier);
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES

@@ -116,6 +116,14 @@ pub const FEATURES: &[Feature] = &[
         toggleable: false,
         description: "System diagnostics and historical resource metrics tracking",
     },
+    Feature {
+        id: "startup_notification",
+        name: "Startup Notification",
+        version: "1.0.0",
+        since: "0.4.0",
+        toggleable: true,
+        description: "Rich notifications when bot comes online with version and changelog",
+    },
 ];
 
 /// Get all registered features
@@ -164,7 +172,7 @@ mod tests {
     fn test_get_features() {
         let features = get_features();
         assert!(!features.is_empty());
-        assert!(features.len() >= 11, "Should have at least 11 features");
+        assert!(features.len() >= 12, "Should have at least 12 features");
     }
 
     #[test]

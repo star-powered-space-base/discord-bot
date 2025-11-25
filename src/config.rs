@@ -14,6 +14,10 @@ pub struct Config {
     pub conflict_mediation_enabled: bool,
     pub conflict_sensitivity: String,
     pub mediation_cooldown_minutes: u64,
+    // Startup notification settings
+    pub startup_notifications_enabled: bool,
+    pub startup_notify_owner_id: Option<u64>,
+    pub startup_notify_channel_id: Option<u64>,
 }
 
 impl Config {
@@ -37,6 +41,17 @@ impl Config {
                 .unwrap_or_else(|_| "5".to_string())
                 .parse()
                 .unwrap_or(5),
+            // Startup notification settings
+            startup_notifications_enabled: env::var("STARTUP_NOTIFICATIONS_ENABLED")
+                .unwrap_or_else(|_| "false".to_string())
+                .to_lowercase()
+                == "true",
+            startup_notify_owner_id: env::var("STARTUP_NOTIFY_OWNER_ID")
+                .ok()
+                .and_then(|s| s.parse().ok()),
+            startup_notify_channel_id: env::var("STARTUP_NOTIFY_CHANNEL_ID")
+                .ok()
+                .and_then(|s| s.parse().ok()),
         })
     }
 }
