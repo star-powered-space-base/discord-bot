@@ -109,6 +109,11 @@ pub struct BotConfig {
     /// Per-bot mediation cooldown override (minutes)
     #[serde(default)]
     pub mediation_cooldown_minutes: Option<u64>,
+
+    /// Allowed commands for this bot (empty/None = all commands)
+    /// Only these commands will be registered with Discord
+    #[serde(default)]
+    pub commands: Option<Vec<String>>,
 }
 
 impl BotConfig {
@@ -135,6 +140,14 @@ impl BotConfig {
     /// Get effective mediation cooldown (minutes)
     pub fn effective_mediation_cooldown(&self, global_default: u64) -> u64 {
         self.mediation_cooldown_minutes.unwrap_or(global_default)
+    }
+
+    /// Check if a command should be registered for this bot
+    pub fn allows_command(&self, command_name: &str) -> bool {
+        match &self.commands {
+            None => true,  // No allowlist = all commands
+            Some(allowed) => allowed.iter().any(|c| c == command_name),
+        }
     }
 }
 
@@ -244,6 +257,7 @@ impl MultiConfig {
             conflict_mediation_enabled: None,
             conflict_sensitivity: None,
             mediation_cooldown_minutes: None,
+            commands: None, // Use all commands
         };
 
         Ok(MultiConfig {
@@ -319,6 +333,62 @@ impl MultiConfig {
                 "Invalid global conflict_sensitivity '{}'. Use: low, medium, high",
                 self.conflict_sensitivity
             );
+        }
+
+        // Check for command overlaps when multiple bots share a guild
+        use std::collections::HashMap;
+        let mut guild_commands: HashMap<String, HashMap<String, Vec<String>>> = HashMap::new();
+
+        for bot in &self.bots {
+            if let Some(ref guild_id) = bot.discord_guild_id {
+                let guild_entry = guild_commands.entry(guild_id.clone()).or_insert_with(HashMap::new);
+
+                // Get this bot's allowed commands
+                let bot_commands = match &bot.commands {
+                    Some(cmds) => cmds.clone(),
+                    None => {
+                        // No allowlist in a shared guild = potential for all commands
+                        if !guild_entry.is_empty() {
+                            anyhow::bail!(
+                                "Bot '{}' in guild '{}' has no command allowlist while other bots are present. \
+                                All bots sharing a guild must have explicit command allowlists to prevent overlaps.",
+                                bot.name, guild_id
+                            );
+                        }
+                        continue;
+                    }
+                };
+
+                guild_entry.insert(bot.name.clone(), bot_commands);
+            }
+        }
+
+        // Detect overlaps
+        for (guild_id, bots_in_guild) in &guild_commands {
+            let bot_names: Vec<_> = bots_in_guild.keys().collect();
+
+            for i in 0..bot_names.len() {
+                for j in (i + 1)..bot_names.len() {
+                    let bot1 = bot_names[i];
+                    let bot2 = bot_names[j];
+                    let cmds1 = &bots_in_guild[bot1];
+                    let cmds2 = &bots_in_guild[bot2];
+
+                    let overlaps: Vec<_> = cmds1.iter()
+                        .filter(|cmd| cmds2.contains(cmd))
+                        .cloned()
+                        .collect();
+
+                    if !overlaps.is_empty() {
+                        anyhow::bail!(
+                            "Command overlap detected in guild '{}':\n  \
+                            Bot '{}' and '{}' both register: {}\n\n  \
+                            Fix: Remove overlapping commands from one bot's allowlist",
+                            guild_id, bot1, bot2, overlaps.join(", ")
+                        );
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -555,6 +625,7 @@ mediation_cooldown_minutes: 10
             conflict_mediation_enabled: Some(false),
             conflict_sensitivity: Some("high".to_string()),
             mediation_cooldown_minutes: Some(15),
+            commands: None,
         };
 
         assert_eq!(bot.bot_id(), "123456789");
@@ -577,6 +648,7 @@ mediation_cooldown_minutes: 10
             conflict_mediation_enabled: None,
             conflict_sensitivity: None,
             mediation_cooldown_minutes: None,
+            commands: None,
         };
 
         // Should fall back to name when no application_id
@@ -620,6 +692,7 @@ mediation_cooldown_minutes: 10
                 conflict_mediation_enabled: None,
                 conflict_sensitivity: Some("invalid".to_string()),
                 mediation_cooldown_minutes: None,
+                commands: None,
             }],
             openai_api_key: "key".to_string(),
             database_path: "db".to_string(),
@@ -648,6 +721,7 @@ mediation_cooldown_minutes: 10
             conflict_mediation_enabled: Some(false),
             conflict_sensitivity: Some("high".to_string()),
             mediation_cooldown_minutes: Some(10),
+            commands: None,
         };
 
         let multi = MultiConfig {

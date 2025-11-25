@@ -39,6 +39,7 @@ static NOTIFIED_BOTS: once_cell::sync::Lazy<Mutex<HashSet<String>>> =
 struct Handler {
     bot_id: String,
     bot_name: String,
+    bot_config: BotConfig,
     command_handler: Arc<CommandHandler>,
     component_handler: Arc<MessageComponentHandler>,
     guild_id: Option<GuildId>,
@@ -49,6 +50,7 @@ impl Handler {
     fn new(
         bot_id: String,
         bot_name: String,
+        bot_config: BotConfig,
         command_handler: CommandHandler,
         component_handler: MessageComponentHandler,
         guild_id: Option<GuildId>,
@@ -57,6 +59,7 @@ impl Handler {
         Handler {
             bot_id,
             bot_name,
+            bot_config,
             command_handler: Arc::new(command_handler),
             component_handler: Arc::new(component_handler),
             guild_id,
@@ -106,7 +109,7 @@ impl EventHandler for Handler {
                 "[{}] Development mode: Registering commands for guild {guild_id}",
                 self.bot_name
             );
-            if let Err(e) = register_guild_commands(&ctx, guild_id).await {
+            if let Err(e) = register_guild_commands(&ctx, guild_id, self.bot_config.commands.as_deref()).await {
                 error!(
                     "[{}] Failed to register guild slash commands: {e}",
                     self.bot_name
@@ -122,7 +125,7 @@ impl EventHandler for Handler {
                 "[{}] Production mode: Registering commands globally",
                 self.bot_name
             );
-            if let Err(e) = register_global_commands(&ctx).await {
+            if let Err(e) = register_global_commands(&ctx, self.bot_config.commands.as_deref()).await {
                 error!(
                     "[{}] Failed to register global slash commands: {e}",
                     self.bot_name
@@ -447,6 +450,7 @@ async fn run_bot_inner(
     let handler = Handler::new(
         bot_id.clone(),
         bot_name.clone(),
+        bot_config.clone(),
         command_handler,
         component_handler,
         guild_id,

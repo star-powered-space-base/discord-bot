@@ -18,6 +18,12 @@
 # =============================================================================
 # Each bot represents a separate Discord application with its own token.
 # All bots share the same database (isolated by bot_id) and OpenAI API key.
+#
+# IMPORTANT: Command Allowlists
+# If multiple bots share the same discord_guild_id, they MUST have non-overlapping
+# command allowlists. Overlapping commands will cause a validation error on startup.
+# Bots without discord_guild_id (global scope) don't conflict with each other.
+# See docs/command-allowlists.md for detailed documentation.
 
 bots:
   # Muppet Friend Bot - Chaotic, energetic personality
@@ -27,13 +33,30 @@ bots:
     default_persona: "muppet"
     # discord_guild_id: "123456789"  # Optional: Dev guild for faster command registration
     # openai_model: "gpt-4o"         # Optional: Override global model
+    # Command allowlist (optional) - if omitted, all commands are registered
+    # commands:
+    #   - "ping"
+    #   - "help"
+    #   - "hey"
+    #   - "explain"
+    #   - "simple"
+    #   - "personas"
+    #   - "set_persona"
 
-  # Chef Bot - Culinary-focused personality
+  # Chef Bot - Culinary-focused personality with limited commands
   - name: "chef"
     discord_token: "${DISCORD_CHEF_TOKEN}"
     discord_public_key: "${DISCORD_CHEF_PUBLIC_KEY:-}"
     default_persona: "chef"
     conflict_mediation_enabled: false  # Chef doesn't mediate conflicts
+    # Example: Only food-related and basic commands
+    commands:
+      - "recipe"
+      - "hey"
+      - "ping"
+      - "help"
+      - "personas"
+      - "forget"
 
   # Teacher Bot - Educational, patient personality
   - name: "teacher"
@@ -41,6 +64,17 @@ bots:
     default_persona: "teacher"
     openai_model: "gpt-4o"  # Use more capable model for educational content
     conflict_sensitivity: "low"  # Only intervene in severe conflicts
+    # Example: Educational commands only
+    commands:
+      - "ping"
+      - "help"
+      - "explain"
+      - "simple"
+      - "steps"
+      - "hey"
+      - "personas"
+      - "set_persona"
+      - "settings"
 
   # Obi-Wan Bot - Wise, philosophical personality (default)
   - name: "obi"
@@ -48,6 +82,17 @@ bots:
     default_persona: "obi"
     conflict_sensitivity: "high"  # Proactive peacekeeper
     mediation_cooldown_minutes: 3  # Shorter cooldown for active mediation
+    # Example: Admin and moderation commands
+    commands:
+      - "ping"
+      - "help"
+      - "status"
+      - "settings"
+      - "features"
+      - "toggle"
+      - "sysinfo"
+      - "set_channel_verbosity"
+      - "introspect"
 
 # =============================================================================
 # Shared Configuration

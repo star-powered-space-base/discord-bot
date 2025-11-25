@@ -59,10 +59,34 @@ pub fn create_context_menu_commands() -> Vec<CreateApplicationCommand> {
     context_menu::create_commands()
 }
 
+/// Filter slash commands by allowlist
+pub fn filter_slash_commands(
+    commands: Vec<CreateApplicationCommand>,
+    allowlist: Option<&[String]>,
+) -> Vec<CreateApplicationCommand> {
+    match allowlist {
+        None => commands,  // No filter = return all
+        Some(allowed) => {
+            commands.into_iter()
+                .filter(|cmd| {
+                    // Extract command name from the builder
+                    let name = cmd.0.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    allowed.contains(&name.to_string())
+                })
+                .collect()
+        }
+    }
+}
+
 /// Registers all slash commands globally
-pub async fn register_global_commands(ctx: &Context) -> Result<()> {
-    let slash_commands = create_slash_commands();
+pub async fn register_global_commands(ctx: &Context, allowlist: Option<&[String]>) -> Result<()> {
+    let mut slash_commands = create_slash_commands();
     let context_commands = create_context_menu_commands();
+
+    // Apply allowlist filter
+    slash_commands = filter_slash_commands(slash_commands, allowlist);
 
     Command::set_global_application_commands(&ctx.http, |commands| {
         for command in slash_commands {
@@ -80,9 +104,12 @@ pub async fn register_global_commands(ctx: &Context) -> Result<()> {
 }
 
 /// Registers all slash commands for a specific guild (faster for testing)
-pub async fn register_guild_commands(ctx: &Context, guild_id: GuildId) -> Result<()> {
-    let slash_commands = create_slash_commands();
+pub async fn register_guild_commands(ctx: &Context, guild_id: GuildId, allowlist: Option<&[String]>) -> Result<()> {
+    let mut slash_commands = create_slash_commands();
     let context_commands = create_context_menu_commands();
+
+    // Apply allowlist filter
+    slash_commands = filter_slash_commands(slash_commands, allowlist);
 
     guild_id
         .set_application_commands(&ctx.http, |commands| {
