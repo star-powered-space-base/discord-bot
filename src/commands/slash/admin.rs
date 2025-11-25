@@ -86,6 +86,7 @@ fn create_set_guild_setting_command() -> CreateApplicationCommand {
                 // Medium priority settings
                 .add_string_choice("max_context_messages", "max_context_messages")
                 .add_string_choice("audio_transcription", "audio_transcription")
+                .add_string_choice("audio_transcription_mode", "audio_transcription_mode")
                 .add_string_choice("mention_responses", "mention_responses")
         })
         .create_option(|option| {

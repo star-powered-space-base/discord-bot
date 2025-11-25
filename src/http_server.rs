@@ -384,6 +384,11 @@ async fn handle_autocomplete(
                     {"name": "enabled - Transcribe audio files", "value": "enabled"},
                     {"name": "disabled - Skip audio processing", "value": "disabled"}
                 ]),
+                "audio_transcription_mode" => json!([
+                    {"name": "always - Transcribe all audio files", "value": "always"},
+                    {"name": "mention_only - Only when @mentioned", "value": "mention_only"},
+                    {"name": "disabled - Never transcribe", "value": "disabled"}
+                ]),
                 "mention_responses" => json!([
                     {"name": "enabled - Respond when @mentioned", "value": "enabled"},
                     {"name": "disabled - Ignore mentions", "value": "disabled"}

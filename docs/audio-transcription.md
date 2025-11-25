@@ -33,8 +33,14 @@ The following file extensions are supported:
 ```
 User uploads audio file
          ↓
-Bot checks guild audio_transcription setting
+Bot checks guild audio_transcription feature flag
          ↓ (if enabled)
+Bot checks audio_transcription_mode setting
+         ↓
+Mode = "always"? → Continue
+Mode = "mention_only"? → Check if bot was @mentioned
+Mode = "disabled"? → Stop
+         ↓ (if should transcribe)
 Bot sends "🎵 Transcribing your audio..."
          ↓
 Download attachment to /tmp/discord_audio_{filename}
@@ -75,9 +81,9 @@ pub struct AudioTranscriber {
 
 ## Configuration
 
-### Guild Setting
+### Feature Toggle
 
-Audio transcription can be enabled or disabled per-guild:
+Audio transcription can be enabled or disabled per-guild using the feature flag:
 
 ```
 /set_guild_setting setting:audio_transcription value:disabled
@@ -85,20 +91,38 @@ Audio transcription can be enabled or disabled per-guild:
 
 | Value | Behavior |
 |-------|----------|
-| `enabled` | Transcribe audio attachments (default) |
-| `disabled` | Ignore audio attachments |
+| `enabled` | Feature is active (default) |
+| `disabled` | Feature is completely off |
 
-**Note:** Audio transcription is always enabled in DMs regardless of guild settings.
+### Transcription Mode
 
-### Fallback Behavior
+Control when audio files are transcribed:
 
-1. Check guild's `audio_transcription` setting
-2. If not set, default to `enabled`
-3. In DMs, always enabled
+```
+/set_guild_setting setting:audio_transcription_mode value:mention_only
+```
+
+| Mode | Behavior |
+|------|----------|
+| `always` | Transcribe all audio attachments automatically |
+| `mention_only` | Only transcribe when bot is @mentioned (default) |
+| `disabled` | Never transcribe (same as disabling feature) |
+
+### DM Behavior
+
+Audio transcription in Direct Messages always uses `always` mode - files are transcribed automatically without requiring a mention.
+
+### Setting Hierarchy
+
+1. Check `audio_transcription` feature flag (must be `enabled`)
+2. Check `audio_transcription_mode` setting
+3. Apply mode rules (or `always` for DMs)
 
 ## Usage Examples
 
-### Basic Transcription
+### Basic Transcription (mode: always)
+
+With `audio_transcription_mode` set to `always`:
 
 1. User uploads an audio file (e.g., `voice_memo.m4a`)
 2. Bot responds:
@@ -110,6 +134,16 @@ Audio transcription can be enabled or disabled per-guild:
    📝 **Transcription:**
    Hello, this is a test recording. I'm testing the transcription feature.
    ```
+
+### Mention-Only Transcription (default)
+
+With `audio_transcription_mode` set to `mention_only`:
+
+1. User uploads `voice_memo.m4a` with message: `@Persona transcribe this`
+2. Bot detects it was mentioned and begins transcription
+3. Bot responds with the transcription
+
+**Note:** If the user uploads audio without mentioning the bot, no transcription occurs.
 
 ### Transcription with Follow-up
 

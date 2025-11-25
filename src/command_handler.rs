@@ -88,20 +88,33 @@ impl CommandHandler {
         }
         debug!("[{request_id}] ✅ Rate limit check passed");
 
-        // Check audio_transcription feature flag
-        let audio_enabled = if let Some(gid) = guild_id_opt {
-            self.database.is_feature_enabled("audio_transcription", None, Some(gid)).await?
+        // Get audio transcription mode for this guild
+        let is_dm = msg.guild_id.is_none();
+        let audio_mode = if let Some(gid) = guild_id_opt {
+            let feature_enabled = self.database.is_feature_enabled("audio_transcription", None, Some(gid)).await?;
+            if !feature_enabled {
+                "disabled".to_string()
+            } else {
+                self.database.get_guild_setting(gid, "audio_transcription_mode").await?
+                    .unwrap_or_else(|| "mention_only".to_string())
+            }
         } else {
-            true // Always enabled in DMs
+            "always".to_string() // DMs always auto-transcribe
         };
 
-        if !msg.attachments.is_empty() && audio_enabled {
-            debug!("[{}] 🎵 Processing {} audio attachments", request_id, msg.attachments.len());
+        // Check if we should process audio based on mode
+        let should_transcribe = match audio_mode.as_str() {
+            "always" => true,
+            "mention_only" => is_dm || self.is_bot_mentioned(ctx, msg).await?,
+            _ => false, // "disabled" or unknown
+        };
+
+        if !msg.attachments.is_empty() && should_transcribe {
+            debug!("[{}] 🎵 Processing {} audio attachments (mode: {})", request_id, msg.attachments.len(), audio_mode);
             self.handle_audio_attachments(ctx, msg).await?;
         }
 
         let content = msg.content.trim();
-        let is_dm = msg.guild_id.is_none();
         debug!("[{}] 🔍 Analyzing message content | Length: {} | Is DM: {} | Starts with command: {}",
                request_id, content.len(), is_dm, content.starts_with('!') || content.starts_with('/'));
 
@@ -1861,6 +1874,13 @@ Use the buttons below for more help or to try custom prompts!"#;
                     (false, "Invalid value. Use: `enabled` or `disabled`.")
                 }
             }
+            "audio_transcription_mode" => {
+                if ["always", "mention_only", "disabled"].contains(&value.as_str()) {
+                    (true, "")
+                } else {
+                    (false, "Invalid mode. Use: `always`, `mention_only`, or `disabled`.")
+                }
+            }
             "mention_responses" => {
                 if ["enabled", "disabled"].contains(&value.as_str()) {
                     (true, "")
@@ -1947,6 +1967,8 @@ Use the buttons below for more help or to try custom prompts!"#;
             .unwrap_or_else(|| "40".to_string());
         let guild_audio_transcription = self.database.get_guild_setting(&guild_id, "audio_transcription").await?
             .unwrap_or_else(|| "enabled".to_string());
+        let guild_audio_mode = self.database.get_guild_setting(&guild_id, "audio_transcription_mode").await?
+            .unwrap_or_else(|| "mention_only".to_string());
         let guild_mention_responses = self.database.get_guild_setting(&guild_id, "mention_responses").await?
             .unwrap_or_else(|| "enabled".to_string());
 
@@ -1970,6 +1992,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             • Mediation Cooldown: `{}` minutes\n\
             • Max Context Messages: `{}`\n\
             • Audio Transcription: `{}`\n\
+            • Audio Transcription Mode: `{}`\n\
             • Mention Responses: `{}`\n\
             • Bot Admin Role: {}\n",
             channel_id,
@@ -1982,6 +2005,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             guild_mediation_cooldown,
             guild_max_context,
             guild_audio_transcription,
+            guild_audio_mode,
             guild_mention_responses,
             admin_role_display
         );
