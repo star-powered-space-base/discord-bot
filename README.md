@@ -24,6 +24,8 @@ A sophisticated Discord bot that provides AI-powered conversations through diffe
 The bot supports both Discord slash commands (recommended) and traditional text commands:
 
 ### Slash Commands (Recommended)
+
+**User Commands:**
 - `/ping` - Test bot responsiveness
 - `/help` - Show help message with all commands
 - `/personas` - List available personas and show current persona
@@ -34,17 +36,40 @@ The bot supports both Discord slash commands (recommended) and traditional text 
 - `/steps <task>` - Break something into steps
 - `/recipe <food>` - Get a recipe for the specified food
 - `/forget` - Clear your conversation history with the bot
+- `/remind <time> <message>` - Set a reminder
+- `/reminders [action] [id]` - List or cancel reminders
+- `/imagine <prompt> [size] [style]` - Generate an image using DALL-E
 
-### Traditional Text Commands (Legacy)
-- `!ping` - Test bot responsiveness
-- `/help` - Show help message with all commands
-- `/personas` - List available personas and show current persona
-- `/set_persona <name>` - Set your default persona
-- `/hey <message>` - Chat with your current persona
-- `/explain <message>` - Get an explanation
-- `/simple <message>` - Get a simple explanation with analogies
-- `/steps <message>` - Break something into steps
-- `/recipe <food>` - Get a recipe for the specified food
+**Utility Commands:**
+- `/status` - Show bot status and uptime
+- `/version` - Show bot and feature versions
+- `/uptime` - Show how long the bot has been running
+
+**Admin Commands** (require MANAGE_GUILD):
+- `/features` - List all features with their toggle status
+- `/toggle <feature>` - Enable/disable toggleable features for this server
+- `/introspect <component>` - Explain bot internals
+- `/settings` - View current guild configuration
+- `/set_channel_verbosity <level> [channel]` - Set response verbosity
+
+### Bang Commands (Text-based)
+
+Quick text-based commands for power users:
+
+**Info Commands:**
+- `!help` - Quick command reference
+- `!status` - Bot status and uptime
+- `!version` - Show bot and feature versions
+- `!uptime` - How long bot has been running
+
+**Quick Commands:**
+- `!ping` - Fast ping (text response)
+- `!features` - List all features with versions
+
+**Admin Commands** (require MANAGE_GUILD):
+- `!toggle <feature>` - Enable/disable a feature
+- `!reload` - Reload guild settings
+- `!sync` - Force sync slash commands
 
 ### Interactive Features
 
@@ -165,8 +190,11 @@ The bot is structured with the following modules:
 - `config.rs` - Configuration management
 - `database.rs` - SQLite database operations
 - `personas.rs` - Persona definitions and management
-- `commands.rs` - Command handling logic (text, slash, and context menu commands)
-- `slash_commands.rs` - Discord slash command definitions and registration
+- `command_handler.rs` - Core command routing and processing
+- `commands/` - Unified command system
+  - `slash/` - Discord slash command definitions and registration
+  - `bang/` - Text-based bang commands (!)
+- `features.rs` - Feature registry with version tracking
 - `message_components.rs` - Interactive components (buttons, modals, select menus)
 - `rate_limiter.rs` - Rate limiting functionality
 - `audio.rs` - Audio transcription functionality

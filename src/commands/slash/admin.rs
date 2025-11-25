@@ -1,4 +1,4 @@
-//! Admin slash commands: /introspect, /settings, /set_channel_verbosity, /set_guild_setting, /admin_role
+//! Admin slash commands: /introspect, /settings, /set_channel_verbosity, /set_guild_setting, /admin_role, /features, /toggle
 
 use serenity::builder::CreateApplicationCommand;
 use serenity::model::application::command::CommandOptionType;
@@ -12,6 +12,8 @@ pub fn create_commands() -> Vec<CreateApplicationCommand> {
         create_set_guild_setting_command(),
         create_settings_command(),
         create_admin_role_command(),
+        create_features_command(),
+        create_toggle_command(),
     ]
 }
 
@@ -118,6 +120,37 @@ fn create_admin_role_command() -> CreateApplicationCommand {
                 .description("The role to grant bot management permissions")
                 .kind(CommandOptionType::Role)
                 .required(true)
+        })
+        .to_owned()
+}
+
+/// Creates the features command (admin) - shows all features with status
+fn create_features_command() -> CreateApplicationCommand {
+    CreateApplicationCommand::default()
+        .name("features")
+        .description("List all bot features with their versions and toggle status (Admin)")
+        .default_member_permissions(Permissions::MANAGE_GUILD)
+        .to_owned()
+}
+
+/// Creates the toggle command (admin) - enables/disables toggleable features
+fn create_toggle_command() -> CreateApplicationCommand {
+    CreateApplicationCommand::default()
+        .name("toggle")
+        .description("Enable or disable a toggleable feature for this server (Admin)")
+        .default_member_permissions(Permissions::MANAGE_GUILD)
+        .create_option(|option| {
+            option
+                .name("feature")
+                .description("The feature to toggle")
+                .kind(CommandOptionType::String)
+                .required(true)
+                // Add choices for toggleable features
+                .add_string_choice("Reminders", "reminders")
+                .add_string_choice("Conflict Detection", "conflict_detection")
+                .add_string_choice("Conflict Mediation", "conflict_mediation")
+                .add_string_choice("Image Generation", "image_generation")
+                .add_string_choice("Audio Transcription", "audio_transcription")
         })
         .to_owned()
 }

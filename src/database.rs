@@ -231,6 +231,24 @@ impl Database {
              ON feature_flags(feature_name, user_id, guild_id)",
         )?;
 
+        // Feature versions tracking for audit trail
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS feature_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                guild_id TEXT,
+                toggled_by TEXT,
+                enabled BOOLEAN NOT NULL,
+                changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feature_versions
+             ON feature_versions(feature_name, guild_id, changed_at)",
+        )?;
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS guild_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -892,6 +910,8 @@ impl Database {
         Ok(())
     }
 
+    /// Check if a feature is enabled for a guild
+    /// Returns true by default if no record exists (features are enabled unless explicitly disabled)
     pub async fn is_feature_enabled(&self, feature_name: &str, user_id: Option<&str>, guild_id: Option<&str>) -> Result<bool> {
         let conn = self.connection.lock().await;
         let mut statement = conn.prepare(
@@ -907,8 +927,52 @@ impl Database {
             let enabled = statement.read::<i64, _>(0)?;
             Ok(enabled == 1)
         } else {
-            Ok(false)
+            // Default to enabled if no explicit setting exists
+            Ok(true)
         }
+    }
+
+    /// Get all feature flags for a guild
+    /// Returns a map of feature_name -> enabled status
+    pub async fn get_guild_feature_flags(&self, guild_id: &str) -> Result<std::collections::HashMap<String, bool>> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "SELECT feature_name, enabled FROM feature_flags
+             WHERE guild_id = ? AND user_id = ''"
+        )?;
+        statement.bind((1, guild_id))?;
+
+        let mut flags = std::collections::HashMap::new();
+        while let Ok(State::Row) = statement.next() {
+            let feature_name = statement.read::<String, _>(0)?;
+            let enabled = statement.read::<i64, _>(1)? == 1;
+            flags.insert(feature_name, enabled);
+        }
+        Ok(flags)
+    }
+
+    /// Record a feature toggle action in the audit trail
+    pub async fn record_feature_toggle(
+        &self,
+        feature_name: &str,
+        version: &str,
+        guild_id: Option<&str>,
+        toggled_by: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "INSERT INTO feature_versions (feature_name, version, guild_id, toggled_by, enabled)
+             VALUES (?, ?, ?, ?, ?)"
+        )?;
+        statement.bind((1, feature_name))?;
+        statement.bind((2, version))?;
+        statement.bind((3, guild_id.unwrap_or("")))?;
+        statement.bind((4, toggled_by))?;
+        statement.bind((5, if enabled { 1i64 } else { 0i64 }))?;
+        statement.next()?;
+        info!("Recorded feature toggle: {} -> {} by {}", feature_name, enabled, toggled_by);
+        Ok(())
     }
 
     // Guild Settings Methods

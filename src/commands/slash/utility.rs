@@ -1,4 +1,4 @@
-//! Utility slash commands: /ping, /help, /forget
+//! Utility slash commands: /ping, /help, /forget, /status, /version, /uptime
 
 use serenity::builder::CreateApplicationCommand;
 
@@ -8,6 +8,9 @@ pub fn create_commands() -> Vec<CreateApplicationCommand> {
         create_ping_command(),
         create_help_command(),
         create_forget_command(),
+        create_status_command(),
+        create_version_command(),
+        create_uptime_command(),
     ]
 }
 
@@ -32,5 +35,29 @@ fn create_forget_command() -> CreateApplicationCommand {
     CreateApplicationCommand::default()
         .name("forget")
         .description("Clear your conversation history with the bot")
+        .to_owned()
+}
+
+/// Creates the status command
+fn create_status_command() -> CreateApplicationCommand {
+    CreateApplicationCommand::default()
+        .name("status")
+        .description("Show bot status, uptime, and system information")
+        .to_owned()
+}
+
+/// Creates the version command
+fn create_version_command() -> CreateApplicationCommand {
+    CreateApplicationCommand::default()
+        .name("version")
+        .description("Show bot version and feature versions")
+        .to_owned()
+}
+
+/// Creates the uptime command
+fn create_uptime_command() -> CreateApplicationCommand {
+    CreateApplicationCommand::default()
+        .name("uptime")
+        .description("Show how long the bot has been running")
         .to_owned()
 }

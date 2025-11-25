@@ -31,6 +31,7 @@ pub struct CommandHandler {
     conflict_mediator: ConflictMediator,
     conflict_enabled: bool,
     conflict_sensitivity_threshold: f32,
+    start_time: std::time::Instant,
 }
 
 impl CommandHandler {
@@ -62,6 +63,7 @@ impl CommandHandler {
             conflict_mediator: ConflictMediator::new(999, mediation_cooldown_minutes), // High limit for testing
             conflict_enabled,
             conflict_sensitivity_threshold: sensitivity_threshold,
+            start_time: std::time::Instant::now(),
         }
     }
 
@@ -88,11 +90,9 @@ impl CommandHandler {
         }
         debug!("[{}] ✅ Rate limit check passed", request_id);
 
-        // Check audio_transcription guild setting
+        // Check audio_transcription feature flag
         let audio_enabled = if let Some(gid) = guild_id_opt {
-            self.database.get_guild_setting(gid, "audio_transcription").await?
-                .map(|v| v == "enabled")
-                .unwrap_or(true) // Default enabled
+            self.database.is_feature_enabled("audio_transcription", None, Some(gid)).await?
         } else {
             true // Always enabled in DMs
         };
@@ -113,11 +113,9 @@ impl CommandHandler {
             self.database.store_message(&user_id, &channel_id, "user", content, None).await?;
         }
 
-        // Conflict detection - check both env var AND guild setting
+        // Conflict detection - check both env var AND feature flag
         let guild_conflict_enabled = if let Some(gid) = guild_id_opt {
-            self.database.get_guild_setting(gid, "conflict_mediation").await?
-                .map(|v| v == "enabled")
-                .unwrap_or(true) // Default enabled, falls back to env var
+            self.database.is_feature_enabled("conflict_mediation", None, Some(gid)).await?
         } else {
             false // No conflict detection in DMs
         };
@@ -557,6 +555,28 @@ impl CommandHandler {
                 debug!("[{}] 🔍 Handling introspect command", request_id);
                 self.handle_introspect(ctx, command, request_id).await?;
             }
+            // Utility commands
+            "status" => {
+                debug!("[{}] 📊 Handling status command", request_id);
+                self.handle_slash_status(ctx, command, request_id).await?;
+            }
+            "version" => {
+                debug!("[{}] 📦 Handling version command", request_id);
+                self.handle_slash_version(ctx, command, request_id).await?;
+            }
+            "uptime" => {
+                debug!("[{}] ⏱️ Handling uptime command", request_id);
+                self.handle_slash_uptime(ctx, command, request_id).await?;
+            }
+            // Feature management commands
+            "features" => {
+                debug!("[{}] 📋 Handling features command", request_id);
+                self.handle_slash_features(ctx, command, request_id).await?;
+            }
+            "toggle" => {
+                debug!("[{}] 🔀 Handling toggle command", request_id);
+                self.handle_slash_toggle(ctx, command, request_id).await?;
+            }
             _ => {
                 warn!("[{}] ❓ Unknown slash command: {}", request_id, command.data.name);
                 debug!("[{}] 📤 Sending unknown command response to Discord", request_id);
@@ -914,6 +934,28 @@ Use the buttons below for more help or to try custom prompts!"#;
     async fn handle_slash_imagine_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
         let start_time = Instant::now();
         let user_id = command.user.id.to_string();
+
+        // Check if image_generation feature is enabled for this guild
+        let guild_id = command.guild_id.map(|id| id.to_string());
+        let guild_id_opt = guild_id.as_deref();
+        let image_gen_enabled = if let Some(gid) = guild_id_opt {
+            self.database.is_feature_enabled("image_generation", None, Some(gid)).await?
+        } else {
+            true // Always enabled in DMs
+        };
+
+        if !image_gen_enabled {
+            command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|msg| {
+                            msg.content("❌ Image generation is disabled on this server.")
+                        })
+                })
+                .await?;
+            return Ok(());
+        }
 
         debug!("[{}] 🎨 Starting image generation | Command: imagine", request_id);
 
@@ -2125,6 +2167,28 @@ Use the buttons below for more help or to try custom prompts!"#;
         let user_id = command.user.id.to_string();
         let channel_id = command.channel_id.to_string();
 
+        // Check if reminders feature is enabled for this guild
+        let guild_id = command.guild_id.map(|id| id.to_string());
+        let guild_id_opt = guild_id.as_deref();
+        let reminders_enabled = if let Some(gid) = guild_id_opt {
+            self.database.is_feature_enabled("reminders", None, Some(gid)).await?
+        } else {
+            true // Always enabled in DMs
+        };
+
+        if !reminders_enabled {
+            command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|msg| {
+                            msg.content("❌ Reminders are disabled on this server.")
+                        })
+                })
+                .await?;
+            return Ok(());
+        }
+
         let time_str = get_string_option(&command.data.options, "time")
             .ok_or_else(|| anyhow::anyhow!("Missing time parameter"))?;
         let message = get_string_option(&command.data.options, "message")
@@ -2185,6 +2249,28 @@ Use the buttons below for more help or to try custom prompts!"#;
         request_id: Uuid,
     ) -> Result<()> {
         let user_id = command.user.id.to_string();
+
+        // Check if reminders feature is enabled for this guild
+        let guild_id = command.guild_id.map(|id| id.to_string());
+        let guild_id_opt = guild_id.as_deref();
+        let reminders_enabled = if let Some(gid) = guild_id_opt {
+            self.database.is_feature_enabled("reminders", None, Some(gid)).await?
+        } else {
+            true // Always enabled in DMs
+        };
+
+        if !reminders_enabled {
+            command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|msg| {
+                            msg.content("❌ Reminders are disabled on this server.")
+                        })
+                })
+                .await?;
+            return Ok(());
+        }
 
         let action = get_string_option(&command.data.options, "action")
             .unwrap_or_else(|| "list".to_string());
@@ -2382,6 +2468,221 @@ Use the buttons below for more help or to try custom prompts!"#;
         self.database.log_usage(&user_id, "introspect", Some(&persona_name)).await?;
 
         info!("[{}] ✅ Introspection complete for component: {}", request_id, component);
+        Ok(())
+    }
+
+    /// Handle the /status slash command
+    async fn handle_slash_status(
+        &self,
+        ctx: &Context,
+        command: &ApplicationCommandInteraction,
+        request_id: Uuid,
+    ) -> Result<()> {
+        let user_id = command.user.id.to_string();
+
+        let uptime = self.start_time.elapsed();
+        let hours = uptime.as_secs() / 3600;
+        let minutes = (uptime.as_secs() % 3600) / 60;
+        let seconds = uptime.as_secs() % 60;
+
+        let response = format!(
+            "**Bot Status**\n\
+            ✅ Online and operational\n\
+            ⏱️ Uptime: {}h {}m {}s\n\
+            📦 Version: {}",
+            hours,
+            minutes,
+            seconds,
+            crate::features::get_bot_version()
+        );
+
+        command
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                    .interaction_response_data(|m| m.content(response))
+            })
+            .await?;
+
+        self.database.log_usage(&user_id, "status", None).await?;
+        info!("[{}] ✅ Status command completed", request_id);
+        Ok(())
+    }
+
+    /// Handle the /version slash command
+    async fn handle_slash_version(
+        &self,
+        ctx: &Context,
+        command: &ApplicationCommandInteraction,
+        request_id: Uuid,
+    ) -> Result<()> {
+        let user_id = command.user.id.to_string();
+
+        let mut output = format!("**Persona Bot v{}**\n\n", crate::features::get_bot_version());
+        output.push_str("**Feature Versions:**\n");
+
+        for feature in crate::features::get_features() {
+            output.push_str(&format!("• {} v{}\n", feature.name, feature.version));
+        }
+
+        command
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                    .interaction_response_data(|m| m.content(output))
+            })
+            .await?;
+
+        self.database.log_usage(&user_id, "version", None).await?;
+        info!("[{}] ✅ Version command completed", request_id);
+        Ok(())
+    }
+
+    /// Handle the /uptime slash command
+    async fn handle_slash_uptime(
+        &self,
+        ctx: &Context,
+        command: &ApplicationCommandInteraction,
+        request_id: Uuid,
+    ) -> Result<()> {
+        let user_id = command.user.id.to_string();
+
+        let uptime = self.start_time.elapsed();
+        let days = uptime.as_secs() / 86400;
+        let hours = (uptime.as_secs() % 86400) / 3600;
+        let minutes = (uptime.as_secs() % 3600) / 60;
+        let seconds = uptime.as_secs() % 60;
+
+        let response = if days > 0 {
+            format!("⏱️ Uptime: {}d {}h {}m {}s", days, hours, minutes, seconds)
+        } else if hours > 0 {
+            format!("⏱️ Uptime: {}h {}m {}s", hours, minutes, seconds)
+        } else if minutes > 0 {
+            format!("⏱️ Uptime: {}m {}s", minutes, seconds)
+        } else {
+            format!("⏱️ Uptime: {}s", seconds)
+        };
+
+        command
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                    .interaction_response_data(|m| m.content(response))
+            })
+            .await?;
+
+        self.database.log_usage(&user_id, "uptime", None).await?;
+        info!("[{}] ✅ Uptime command completed", request_id);
+        Ok(())
+    }
+
+    /// Handle the /features slash command - shows all features with toggle status
+    async fn handle_slash_features(
+        &self,
+        ctx: &Context,
+        command: &ApplicationCommandInteraction,
+        request_id: Uuid,
+    ) -> Result<()> {
+        let user_id = command.user.id.to_string();
+        let guild_id = command.guild_id.map(|id| id.to_string());
+
+        // Get feature flags for this guild
+        let flags = if let Some(ref gid) = guild_id {
+            self.database.get_guild_feature_flags(gid).await.unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        let mut output = format!("📦 **Bot Features** (v{})\n\n", crate::features::get_bot_version());
+        output.push_str("```\n");
+        output.push_str("Feature              Version  Status  Toggleable\n");
+        output.push_str("─────────────────────────────────────────────────\n");
+
+        for feature in crate::features::get_features() {
+            // Check if feature is enabled (default true if no record)
+            let enabled = flags.get(feature.id).copied().unwrap_or(true);
+            let status_str = if enabled { "✅ ON " } else { "❌ OFF" };
+            let toggle_str = if feature.toggleable { "Yes" } else { "No " };
+
+            output.push_str(&format!(
+                "{:<20} {:<8} {}  {}\n",
+                feature.name, feature.version, status_str, toggle_str
+            ));
+        }
+
+        output.push_str("```\n");
+        output.push_str("Use `/toggle <feature>` to enable/disable toggleable features.");
+
+        command
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                    .interaction_response_data(|m| m.content(output))
+            })
+            .await?;
+
+        self.database.log_usage(&user_id, "features", None).await?;
+        info!("[{}] ✅ Features command completed", request_id);
+        Ok(())
+    }
+
+    /// Handle the /toggle slash command - enables/disables toggleable features
+    async fn handle_slash_toggle(
+        &self,
+        ctx: &Context,
+        command: &ApplicationCommandInteraction,
+        request_id: Uuid,
+    ) -> Result<()> {
+        let user_id = command.user.id.to_string();
+        let guild_id = command.guild_id.map(|id| id.to_string());
+
+        let feature_id = get_string_option(&command.data.options, "feature")
+            .ok_or_else(|| anyhow::anyhow!("Missing feature parameter"))?;
+
+        // Verify this is a valid toggleable feature
+        let feature = crate::features::get_feature(&feature_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown feature: {}", feature_id))?;
+
+        if !feature.toggleable {
+            command
+                .create_interaction_response(&ctx.http, |r| {
+                    r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|m| {
+                            m.content(format!("❌ **{}** cannot be toggled. It's a core feature.", feature.name))
+                        })
+                })
+                .await?;
+            return Ok(());
+        }
+
+        // Get current status
+        let guild_id_str = guild_id.as_deref().unwrap_or("");
+        let current_enabled = self.database.is_feature_enabled(&feature_id, None, Some(guild_id_str)).await?;
+
+        // Toggle it
+        let new_enabled = !current_enabled;
+        self.database.set_feature_flag(&feature_id, new_enabled, None, Some(guild_id_str)).await?;
+
+        // Record in audit trail
+        self.database.record_feature_toggle(
+            &feature_id,
+            feature.version,
+            Some(guild_id_str),
+            &user_id,
+            new_enabled,
+        ).await?;
+
+        let status = if new_enabled { "✅ enabled" } else { "❌ disabled" };
+        let response = format!(
+            "**{}** has been {}.\n\nFeature: {} v{}",
+            feature.name, status, feature.id, feature.version
+        );
+
+        command
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
+                    .interaction_response_data(|m| m.content(response))
+            })
+            .await?;
+
+        self.database.log_usage(&user_id, "toggle", None).await?;
+        info!("[{}] ✅ Toggle command completed: {} -> {}", request_id, feature_id, new_enabled);
         Ok(())
     }
 

@@ -144,7 +144,7 @@ pub fn format_features_list() -> String {
         ));
     }
 
-    output.push_str("\nUse !toggle <feature_id> to enable/disable toggleable features.");
+    output.push_str("\nUse /toggle <feature_id> to enable/disable toggleable features.");
     output
 }
 

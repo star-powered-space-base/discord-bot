@@ -13,7 +13,3 @@ pub mod message_components;
 pub mod personas;
 pub mod rate_limiter;
 pub mod reminder_scheduler;
-
-// Keep slash_commands for backwards compatibility during transition
-// TODO: Remove once all imports are updated to use commands::slash
-pub mod slash_commands;

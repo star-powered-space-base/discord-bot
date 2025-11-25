@@ -142,6 +142,31 @@ make uninstall-service
 make clean
 ```
 
+## Scripts Commands
+
+The project includes organized scripts in the `scripts/` directory with Makefile delegation:
+
+| Command | Description |
+|---------|-------------|
+| `make scripts/commands/check` | Check registered Discord commands |
+| `make scripts/commands/cleanup` | Remove duplicate command registrations |
+| `make scripts/service/reload` | Reload systemd service |
+| `make scripts/service/status` | Check service status |
+| `make scripts/tunnel/setup` | Configure ngrok tunnel |
+| `make scripts/tunnel/start-http` | Start bot with HTTP tunnel |
+| `make scripts/tunnel/start-gateway` | Start bot with gateway tunnel |
+| `make scripts/test/env` | Validate environment configuration |
+| `make scripts/test/openai` | Test OpenAI API connectivity |
+
+### Convenience Aliases
+
+| Alias | Equivalent |
+|-------|------------|
+| `make check-commands` | `make scripts/commands/check` |
+| `make cleanup-commands` | `make scripts/commands/cleanup` |
+
+See `scripts/README.md` for detailed script documentation.
+
 ## Tips
 
 - Run `make` or `make help` at any time to see all available commands

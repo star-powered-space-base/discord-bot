@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_create_slash_commands() {
         let commands = create_slash_commands();
-        assert!(commands.len() >= 17, "Should have at least 17 commands");
+        assert!(commands.len() >= 22, "Should have at least 22 commands");
 
         let command_names: Vec<String> = commands
             .iter()
@@ -182,6 +182,13 @@ mod tests {
             "set_guild_setting",
             "settings",
             "admin_role",
+            // New utility commands
+            "status",
+            "version",
+            "uptime",
+            // New admin commands
+            "features",
+            "toggle",
         ];
 
         for expected in expected_commands {

@@ -14,7 +14,7 @@ use persona::database::Database;
 use persona::message_components::MessageComponentHandler;
 use persona::personas::PersonaManager;
 use persona::reminder_scheduler::ReminderScheduler;
-use persona::slash_commands::{register_global_commands, register_guild_commands};
+use persona::commands::{register_global_commands, register_guild_commands};
 use serenity::model::id::GuildId;
 
 struct Handler {

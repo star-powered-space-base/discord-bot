@@ -1,8 +1,8 @@
 # Feature Organization & Versioning System
 
-> **Status**: Planning
-> **Version**: 0.2.0
-> **Last Updated**: 2025-01-22
+> **Status**: All Phases Complete
+> **Version**: 0.3.1
+> **Last Updated**: 2025-11-24
 
 This document outlines the reorganization of bot features, command systems, and scripts for better maintainability and runtime control.
 
@@ -449,40 +449,48 @@ CREATE TABLE IF NOT EXISTS feature_versions (
 );
 ```
 
-### Admin Commands
+### Admin Commands (Slash Commands)
 
-**`!features`** - List all features with status:
+**`/features`** - List all features with status (requires MANAGE_GUILD):
 
 ```
-📦 Bot Features (v0.2.0)
+📦 Bot Features (v0.3.0)
 
-Feature              Version  Status    Toggleable
+Feature              Version  Status  Toggleable
 ─────────────────────────────────────────────────
-Persona System       1.0.0    ✅ ON     No
-Reminders            1.0.0    ✅ ON     Yes
-Conflict Detection   1.0.0    ❌ OFF    Yes
-Image Generation     1.0.0    ✅ ON     Yes
-Audio Transcription  1.0.0    ✅ ON     Yes
-Self-Introspection   1.0.0    ✅ ON     No
-Verbosity Control    1.0.0    ✅ ON     No
-Rate Limiting        1.0.0    ✅ ON     No
+Persona System       1.0.0    ✅ ON   No
+Reminders            1.0.0    ✅ ON   Yes
+Conflict Detection   1.0.0    ❌ OFF  Yes
+Image Generation     1.0.0    ✅ ON   Yes
+Audio Transcription  1.0.0    ✅ ON   Yes
+Self-Introspection   1.0.0    ✅ ON   No
+Verbosity Control    1.0.0    ✅ ON   No
+Rate Limiting        1.0.0    ✅ ON   No
 
-Use !toggle <feature_id> to enable/disable toggleable features.
+Use /toggle <feature> to enable/disable toggleable features.
 ```
 
-**`!toggle <feature>`** - Toggle a feature:
+**`/toggle <feature>`** - Toggle a feature (requires MANAGE_GUILD):
 
 ```
-!toggle conflict_detection
+/toggle conflict_detection
 
-✅ Conflict Detection has been enabled for this server.
+Conflict Detection has been ✅ enabled.
+
+Feature: conflict_detection v1.0.0
 ```
 
 ```
-!toggle personas
+/toggle personas
 
-❌ Cannot toggle 'Persona System' - this feature is not toggleable.
+❌ Persona System cannot be toggled. It's a core feature.
 ```
+
+### Utility Commands (Slash Commands)
+
+**`/status`** - Show bot status and uptime
+**`/version`** - Show bot and all feature versions
+**`/uptime`** - Show how long the bot has been running
 
 ### Feature Check Integration
 
@@ -515,69 +523,69 @@ async fn handle_remind(&self, ctx: &Context, msg: &Message) -> Result<()> {
 ## Implementation Checklist
 
 ### Phase 1: Feature Registry
-- [ ] Create `src/features.rs` with Feature struct and registry
-- [ ] Add feature header comments to existing modules:
-  - [ ] `src/personas.rs`
-  - [ ] `src/reminder_scheduler.rs`
-  - [ ] `src/conflict_detector.rs`
-  - [ ] `src/conflict_mediator.rs`
-  - [ ] `src/image_gen.rs`
-  - [ ] `src/audio.rs`
-  - [ ] `src/introspection.rs`
-  - [ ] `src/rate_limiter.rs`
-- [ ] Export features module in `src/lib.rs`
+- [x] Create `src/features.rs` with Feature struct and registry
+- [x] Add feature header comments to existing modules:
+  - [x] `src/personas.rs`
+  - [x] `src/reminder_scheduler.rs`
+  - [x] `src/conflict_detector.rs`
+  - [x] `src/conflict_mediator.rs`
+  - [x] `src/image_gen.rs`
+  - [x] `src/audio.rs`
+  - [x] `src/introspection.rs`
+  - [x] `src/rate_limiter.rs`
+- [x] Export features module in `src/lib.rs`
 
 ### Phase 2: Command Reorganization
-- [ ] Create `src/commands/` directory structure
-- [ ] Create `src/commands/mod.rs` with exports
-- [ ] Create `src/commands/handler.rs` with CommandHandler
-- [ ] Migrate slash commands:
-  - [ ] `src/commands/slash/mod.rs` (registration)
-  - [ ] `src/commands/slash/chat.rs`
-  - [ ] `src/commands/slash/persona.rs`
-  - [ ] `src/commands/slash/utility.rs`
-  - [ ] `src/commands/slash/remind.rs`
-  - [ ] `src/commands/slash/admin.rs`
-  - [ ] `src/commands/slash/imagine.rs`
-  - [ ] `src/commands/slash/recipe.rs`
-- [ ] Create bang command system:
-  - [ ] `src/commands/bang/mod.rs` (parser)
-  - [ ] `src/commands/bang/info.rs`
-  - [ ] `src/commands/bang/quick.rs`
-  - [ ] `src/commands/bang/admin.rs`
-- [ ] Update `src/lib.rs` module exports
-- [ ] Remove old `src/commands.rs` and `src/slash_commands.rs`
+- [x] Create `src/commands/` directory structure
+- [x] Create `src/commands/mod.rs` with exports
+- [x] Create `src/command_handler.rs` with CommandHandler
+- [x] Migrate slash commands:
+  - [x] `src/commands/slash/mod.rs` (registration)
+  - [x] `src/commands/slash/chat.rs`
+  - [x] `src/commands/slash/persona.rs`
+  - [x] `src/commands/slash/utility.rs`
+  - [x] `src/commands/slash/remind.rs`
+  - [x] `src/commands/slash/admin.rs`
+  - [x] `src/commands/slash/imagine.rs`
+  - [x] `src/commands/slash/recipe.rs`
+- [x] Create bang command system:
+  - [x] `src/commands/bang/mod.rs` (parser)
+  - [x] `src/commands/bang/info.rs`
+  - [x] `src/commands/bang/quick.rs`
+  - [x] `src/commands/bang/admin.rs`
+- [x] Update `src/lib.rs` module exports
+- [x] Remove old `src/slash_commands.rs`
 
 ### Phase 3: Scripts Organization
-- [ ] Create `scripts/` directory structure
-- [ ] Move and rename scripts:
-  - [ ] `scripts/commands/check.sh`
-  - [ ] `scripts/commands/cleanup.sh`
-  - [ ] `scripts/service/reload.sh`
-  - [ ] `scripts/service/status.sh`
-  - [ ] `scripts/tunnel/setup.sh`
-  - [ ] `scripts/tunnel/start-http.sh`
-  - [ ] `scripts/tunnel/start-gateway.sh`
-  - [ ] `scripts/test/env.sh`
-  - [ ] `scripts/test/openai.sh`
-- [ ] Create `scripts/Makefile`
-- [ ] Create `scripts/README.md`
-- [ ] Update root `Makefile` with delegation
-- [ ] Remove old scripts from root
+- [x] Create `scripts/` directory structure
+- [x] Move and rename scripts:
+  - [x] `scripts/commands/check.sh`
+  - [x] `scripts/commands/cleanup.sh`
+  - [x] `scripts/service/reload.sh`
+  - [x] `scripts/service/status.sh`
+  - [x] `scripts/tunnel/setup.sh`
+  - [x] `scripts/tunnel/start-http.sh`
+  - [x] `scripts/tunnel/start-gateway.sh`
+  - [x] `scripts/test/env.sh`
+  - [x] `scripts/test/openai.sh`
+- [x] Create `scripts/Makefile`
+- [x] Create `scripts/README.md`
+- [x] Update root `Makefile` with delegation
+- [x] Remove old scripts from root
 
 ### Phase 4: Runtime Toggles
-- [ ] Add `feature_versions` table migration
-- [ ] Add database methods for feature flags
-- [ ] Implement `!features` command
-- [ ] Implement `!toggle` command
-- [ ] Add feature checks to toggleable handlers
-- [ ] Test toggle persistence across restarts
+- [x] Add `feature_versions` table migration
+- [x] Add database methods for feature flags (`is_feature_enabled`, `set_feature_flag`, `get_guild_feature_flags`, `record_feature_toggle`)
+- [x] Implement `/features` command (converted from bang to slash)
+- [x] Implement `/toggle` command (converted from bang to slash, admin-only)
+- [x] Add feature checks to toggleable handlers (`audio_transcription`, `conflict_mediation`, `reminders`, `image_generation`)
+- [x] Toggle persistence verified (SQLite database handles persistence automatically)
 
 ### Phase 5: Documentation
-- [ ] Update `CLAUDE.md` with feature maintenance rules
-- [ ] Update `README.md` with new command prefixes
-- [ ] Update `docs/makefile-reference.md` with script targets
-- [ ] Create migration guide for existing users
+- [x] Update `CLAUDE.md` with feature maintenance rules
+- [x] Update `README.md` with new command prefixes
+- [x] Update `docs/makefile-reference.md` with script targets
+- [x] Migration guide: Feature toggles available via `/features` and `/toggle` commands; all features default to enabled
 
 ---
 
