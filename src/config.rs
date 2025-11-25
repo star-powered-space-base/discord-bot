@@ -31,7 +31,6 @@ pub struct Config {
     pub openai_api_key: String,
     pub database_path: String,
     pub log_level: String,
-    pub discord_public_key: Option<String>,
     pub discord_guild_id: Option<String>,
     pub openai_model: String,
     pub conflict_mediation_enabled: bool,
@@ -49,7 +48,6 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("OPENAI_API_KEY environment variable not set"))?,
             database_path: env::var("DATABASE_PATH").unwrap_or_else(|_| "persona.db".to_string()),
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
-            discord_public_key: env::var("DISCORD_PUBLIC_KEY").ok(),
             discord_guild_id: env::var("DISCORD_GUILD_ID").ok(),
             openai_model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string()),
             conflict_mediation_enabled: env::var("CONFLICT_MEDIATION_ENABLED")
@@ -82,10 +80,6 @@ pub struct BotConfig {
 
     /// Discord bot token (required)
     pub discord_token: String,
-
-    /// Discord public key for interaction verification (HTTP mode only)
-    #[serde(default)]
-    pub discord_public_key: Option<String>,
 
     /// Default persona for this bot (overrides global default)
     #[serde(default)]
@@ -259,7 +253,6 @@ impl MultiConfig {
             application_id: None, // Will be fetched from Discord API
             name: "default".to_string(),
             discord_token: legacy_config.discord_token,
-            discord_public_key: legacy_config.discord_public_key,
             default_persona: None, // Use global default
             discord_guild_id: legacy_config.discord_guild_id,
             openai_model: None,    // Use global default
@@ -421,7 +414,6 @@ impl MultiConfig {
             openai_api_key: self.openai_api_key.clone(),
             database_path: self.database_path.clone(),
             log_level: self.log_level.clone(),
-            discord_public_key: bot.discord_public_key.clone(),
             discord_guild_id: bot.discord_guild_id.clone(),
             openai_model: bot.effective_model(&self.openai_model),
             conflict_mediation_enabled: bot.effective_conflict_enabled(self.conflict_mediation_enabled),
@@ -628,7 +620,6 @@ mediation_cooldown_minutes: 10
             application_id: Some("123456789".to_string()),
             name: "test".to_string(),
             discord_token: "token".to_string(),
-            discord_public_key: None,
             default_persona: None,
             discord_guild_id: None,
             openai_model: Some("gpt-4".to_string()),
@@ -652,7 +643,6 @@ mediation_cooldown_minutes: 10
             application_id: None,
             name: "test".to_string(),
             discord_token: "token".to_string(),
-            discord_public_key: None,
             default_persona: None,
             discord_guild_id: None,
             openai_model: None,
@@ -697,7 +687,6 @@ mediation_cooldown_minutes: 10
                 application_id: None,
                 name: "test".to_string(),
                 discord_token: "token".to_string(),
-                discord_public_key: None,
                 default_persona: None,
                 discord_guild_id: None,
                 openai_model: None,
@@ -727,7 +716,6 @@ mediation_cooldown_minutes: 10
             application_id: Some("123".to_string()),
             name: "test".to_string(),
             discord_token: "bot_token".to_string(),
-            discord_public_key: Some("pub_key".to_string()),
             default_persona: Some("chef".to_string()),
             discord_guild_id: Some("guild_123".to_string()),
             openai_model: Some("gpt-4".to_string()),
@@ -754,7 +742,6 @@ mediation_cooldown_minutes: 10
         assert_eq!(legacy.discord_token, "bot_token");
         assert_eq!(legacy.openai_api_key, "openai_key");
         assert_eq!(legacy.database_path, "test.db");
-        assert_eq!(legacy.discord_public_key, Some("pub_key".to_string()));
         assert_eq!(legacy.discord_guild_id, Some("guild_123".to_string()));
         // Per-bot overrides should be used
         assert_eq!(legacy.openai_model, "gpt-4");

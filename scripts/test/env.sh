@@ -29,7 +29,6 @@ cargo run --bin bot 2>&1 | head -5 | grep -E "(Starting|Configuration|✅|❌)" 
     echo "Optional variables:"
     echo "- LOG_LEVEL=debug"
     echo "- DATABASE_PATH=persona.db"
-    echo "- DISCORD_PUBLIC_KEY=your_public_key (only for HTTP mode)"
     exit 1
 }
 

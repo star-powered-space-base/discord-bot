@@ -98,7 +98,6 @@ For each new setting:
 1. [ ] Add to `set_guild_setting` autocomplete choices in:
    - `src/slash_commands.rs` (command definition)
    - `src/bin/bot.rs` (gateway autocomplete)
-   - `src/http_server.rs` (HTTP autocomplete)
 
 2. [ ] Add validation in `handle_set_guild_setting()` in `src/commands.rs`
 
@@ -113,7 +112,7 @@ For each new setting:
 When adding new settings, update the autocomplete handlers:
 
 ```rust
-// In bot.rs and http_server.rs
+// In bot.rs
 match setting {
     "default_verbosity" => /* existing */,
     "default_persona" => /* obi, muppet, chef, teacher, analyst */,
