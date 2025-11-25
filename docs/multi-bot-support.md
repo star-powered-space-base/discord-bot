@@ -4,9 +4,11 @@
 
 This document outlines a comprehensive plan to enable the persona bot to support multiple Discord applications simultaneously. Currently, the bot is designed for a single Discord application with one token and one identity. This plan details the architectural changes needed to run multiple bots concurrently while sharing resources efficiently.
 
-**Estimated Timeline**: 2 weeks
-**Complexity**: Medium
+**Estimated Timeline**: 3-4 weeks
+**Complexity**: Medium-High
 **Risk Level**: Medium (primarily database migration)
+
+> **Note (Updated 2025-11)**: This plan has been revised to reflect the current codebase state. The original estimate of 2 weeks was based on 4 tables; the actual scope includes 21 tables and 80+ database methods.
 
 ---
 
@@ -36,17 +38,43 @@ This document outlines a comprehensive plan to enable the persona bot to support
 
 **Problem**: No bot identity tracking
 
-Current tables lack `bot_id` column:
-- `user_preferences`: Keyed only by `user_id`
-  - Issue: Same user across multiple bots would conflict
-- `conversation_history`: Keyed by `user_id` + `channel_id`
-  - Issue: Can't distinguish which bot had which conversation
-- `guild_settings`: Keyed by `guild_id` + `setting_key`
-  - Issue: Same guild could have different settings per bot
-- `usage_stats`: No bot identifier
-  - Issue: Can't track usage per bot
+Current database has **21 tables** lacking `bot_id` column:
 
-**Impact**: HIGH - Requires schema migration and ~50 method updates
+**Core User Tables:**
+- `user_preferences`: Keyed only by `user_id` - conflicts across bots
+- `extended_user_preferences`: Per-user key-value pairs
+- `conversation_history`: Keyed by `user_id` + `channel_id`
+
+**Guild & Channel Tables:**
+- `guild_settings`: Keyed by `guild_id` + `setting_key`
+- `channel_settings`: Per-channel verbosity and conflict settings
+
+**Feature & Command Tables:**
+- `custom_commands`: Guild-specific custom commands
+- `feature_flags`: Per-guild feature toggles
+- `feature_versions`: Feature audit trail
+
+**Interaction Tables:**
+- `reminders`: User reminders (needs per-bot isolation)
+- `user_bookmarks`: Message bookmarks
+- `message_metadata`: Message tracking
+- `interaction_sessions`: Session tracking
+
+**Conflict Detection Tables:**
+- `conflict_detection`: Active conflict tracking
+- `mediation_history`: Mediation records (FK to conflict_detection)
+- `user_interaction_patterns`: User interaction analysis
+
+**Analytics Tables:**
+- `usage_stats`: Command usage statistics
+- `daily_analytics`: Daily aggregated metrics
+- `performance_metrics`: Performance tracking
+- `error_logs`: Error tracking
+
+**Global Tables (may remain shared):**
+- `bot_settings`: Global bot configuration
+
+**Impact**: HIGH - Requires schema migration and **~80 method updates**
 
 #### 2. Configuration System ([src/config.rs](../src/config.rs))
 
@@ -54,17 +82,23 @@ Current tables lack `bot_id` column:
 
 ```rust
 pub struct Config {
-    pub discord_token: String,          // Only ONE token
+    pub discord_token: String,              // Only ONE token
     pub openai_api_key: String,
     pub database_path: String,
     pub log_level: String,
     pub discord_public_key: Option<String>, // Only ONE key
+    pub discord_guild_id: Option<String>,   // Dev mode guild
+    pub openai_model: String,               // AI model selection
+    pub conflict_mediation_enabled: bool,   // Conflict feature toggle
+    pub conflict_sensitivity: String,       // Sensitivity level
+    pub mediation_cooldown_minutes: u64,    // Cooldown period
 }
 ```
 
 - Loads from `DISCORD_MUPPET_FRIEND` env variable
 - No concept of multiple bot identities
 - No structure for per-bot configuration
+- Some settings (e.g., `openai_model`) could be per-bot or shared
 
 **Impact**: HIGH - Needs complete redesign
 
@@ -82,37 +116,110 @@ client.start().await?;  // Blocks forever - can't start another bot
 
 **Impact**: MEDIUM - Needs async task spawning
 
-#### 4. Command Handler ([src/commands.rs](../src/commands.rs))
+#### 4. Command Handler ([src/command_handler.rs](../src/command_handler.rs))
 
 **Problem**: No bot context awareness
 
+Current CommandHandler structure:
+```rust
+pub struct CommandHandler {
+    persona_manager: PersonaManager,
+    database: Database,
+    rate_limiter: RateLimiter,
+    audio_transcriber: AudioTranscriber,
+    image_generator: ImageGenerator,        // Image generation support
+    openai_model: String,
+    conflict_detector: ConflictDetector,    // Conflict detection
+    conflict_mediator: ConflictMediator,    // Mediation support
+    conflict_enabled: bool,
+    conflict_sensitivity_threshold: f32,
+    start_time: std::time::Instant,         // Uptime tracking
+}
+```
+
+Issues:
+- No `bot_id` field - cannot identify which bot is handling requests
 - All database calls lack `bot_id` parameter
 - Rate limiting per user, not per bot-user
-- No way to distinguish which bot is handling a command
+- ConflictDetector and ConflictMediator need bot context
 
-**Impact**: MEDIUM - Needs context propagation
+**Impact**: MEDIUM - Needs context propagation through all components
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Database Multi-Tenancy ⚠️ CRITICAL FIRST STEP
+### Phase 1: Database Multi-Tenancy
 
-#### 1.1 Schema Migration
+> **Note**: Phase order has been revised. See Phase 2 (Config) which should be implemented first as it has no dependencies.
 
-Add `bot_id TEXT NOT NULL` to all tables:
+#### 1.1 Schema Migration Strategy
+
+**Important**: SQLite cannot modify PRIMARY KEY or UNIQUE constraints with `ALTER TABLE`. Tables requiring constraint changes must be recreated.
+
+**Tiered Migration Approach:**
+
+| Tier | Tables | Method | Reason |
+|------|--------|--------|--------|
+| **Tier 1** | 8 tables | Full recreation | PK or UNIQUE constraint changes |
+| **Tier 2** | 2 tables | Ordered recreation | Foreign key dependencies |
+| **Tier 3** | 10 tables | ALTER TABLE | Simple column addition |
+
+**Tier 1 - Full Table Recreation (PK/UNIQUE changes):**
+- `user_preferences` - PK: `(user_id)` → `(bot_id, user_id)`
+- `guild_settings` - UNIQUE: `(guild_id, setting_key)` → `(bot_id, guild_id, setting_key)`
+- `channel_settings` - UNIQUE: `(guild_id, channel_id)` → `(bot_id, guild_id, channel_id)`
+- `custom_commands` - UNIQUE: `(command_name, guild_id)` → `(bot_id, command_name, guild_id)`
+- `feature_flags` - UNIQUE: `(feature_name, user_id, guild_id)` → `(bot_id, feature_name, user_id, guild_id)`
+- `extended_user_preferences` - UNIQUE: `(user_id, preference_key)` → `(bot_id, user_id, preference_key)`
+- `user_interaction_patterns` - UNIQUE: `(user_id_a, user_id_b, channel_id)` → `(bot_id, ...)`
+- `daily_analytics` - UNIQUE: `(date)` → `(bot_id, date)`
+
+**Tier 2 - FK-Dependent Tables (order matters):**
+1. `conflict_detection` - Must migrate first (parent table)
+2. `mediation_history` - Has FK to conflict_detection
+
+**Tier 3 - Simple ALTER TABLE:**
+- `conversation_history`, `usage_stats`, `message_metadata`, `interaction_sessions`
+- `user_bookmarks`, `reminders`, `performance_metrics`, `error_logs`, `feature_versions`
 
 ```sql
--- Migration script
-ALTER TABLE user_preferences ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE conversation_history ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE guild_settings ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE usage_stats ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
+-- Migration: 001_add_bot_id_multitenancy.sql
+PRAGMA foreign_keys = OFF;
+BEGIN TRANSACTION;
 
--- Update primary keys
--- user_preferences: (user_id) -> (bot_id, user_id)
--- conversation_history: (id) -> keep id, add index on (bot_id, user_id, channel_id)
--- guild_settings: (guild_id, setting_key) -> (bot_id, guild_id, setting_key)
+-- TIER 1: Example - user_preferences (full recreation)
+CREATE TABLE user_preferences_new (
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id TEXT NOT NULL,
+    default_persona TEXT DEFAULT 'obi',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (bot_id, user_id)
+);
+INSERT INTO user_preferences_new (bot_id, user_id, default_persona, created_at, updated_at)
+SELECT 'default', user_id, default_persona, created_at, updated_at FROM user_preferences;
+DROP TABLE user_preferences;
+ALTER TABLE user_preferences_new RENAME TO user_preferences;
+
+-- (Repeat pattern for other Tier 1 tables...)
+
+-- TIER 2: conflict_detection first, then mediation_history
+-- (Similar recreation pattern with FK preservation)
+
+-- TIER 3: Simple ALTER TABLE
+ALTER TABLE conversation_history ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE usage_stats ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'default';
+-- (Continue for remaining Tier 3 tables...)
+
+-- Recreate indexes with bot_id
+CREATE INDEX idx_conversation ON conversation_history(bot_id, user_id, channel_id, timestamp);
+
+PRAGMA foreign_key_check;
+COMMIT;
+PRAGMA foreign_keys = ON;
+VACUUM;
+ANALYZE;
 ```
 
 #### 1.2 Database Method Updates
@@ -129,45 +236,64 @@ pub async fn get_user_persona(&self, user_id: &str) -> Result<Option<String>>
 pub async fn get_user_persona(&self, bot_id: &str, user_id: &str) -> Result<Option<String>>
 ```
 
-Affected methods (~50 total):
-- `get_user_persona`
-- `set_user_persona`
-- `get_conversation_history`
-- `store_message`
-- `clear_conversation_history`
-- `get_guild_setting`
-- `set_guild_setting`
-- `record_command_usage`
-- All other database operations
+Affected methods (~80 total, grouped by feature):
+
+**User Management:**
+- `get_user_persona`, `get_user_persona_with_guild`, `set_user_persona`
+- `set_user_preference`, `get_user_preference`
+
+**Conversation History:**
+- `store_message`, `get_conversation_history`, `clear_conversation_history`
+- `cleanup_old_messages`, `get_recent_channel_messages`, `get_recent_channel_messages_since`
+
+**Guild & Channel Settings:**
+- `get_guild_setting`, `set_guild_setting`, `get_guild_feature_flags`
+- `get_channel_verbosity`, `set_channel_verbosity`, `get_channel_settings`, `set_channel_conflict_enabled`
+
+**Reminders & Bookmarks:**
+- `add_reminder`, `get_pending_reminders`, `complete_reminder`, `get_user_reminders`, `delete_reminder`
+- `add_bookmark`, `get_user_bookmarks`, `delete_bookmark`
+
+**Custom Commands:**
+- `add_custom_command`, `get_custom_command`, `delete_custom_command`
+
+**Feature Flags:**
+- `set_feature_flag`, `is_feature_enabled`, `record_feature_toggle`
+
+**Conflict Detection:**
+- `record_conflict_detection`, `mark_conflict_resolved`, `mark_mediation_triggered`
+- `get_channel_active_conflict`, `record_mediation`, `get_last_mediation_timestamp`
+- `update_user_interaction_pattern`
+
+**Analytics & Metrics:**
+- `log_usage`, `increment_daily_stat`, `add_performance_metric`, `store_system_metric`
+
+**Sessions & Metadata:**
+- `start_session`, `update_session_activity`, `end_session`
+- `store_message_metadata`, `update_message_metadata_reactions`, `mark_message_deleted`, `mark_message_edited`
 
 #### 1.3 Migration Strategy
 
-**Option A**: Assign existing data to default bot
+**Decision**: Assign existing data to default bot (preserves data)
 - Set `bot_id = 'default'` for all existing records
-- New bots get unique IDs (e.g., 'muppet', 'chef', 'teacher')
-- Pros: Preserves existing data
-- Cons: Migration required for live databases
-
-**Option B**: Fresh start
-- Drop and recreate tables with new schema
-- Pros: Clean implementation
-- Cons: Lose all conversation history
-
-**Recommendation**: Option A with SQL migration script
+- New bots use Discord `application_id` as their `bot_id`
+- Supports global data sharing with per-bot overrides
 
 #### 1.4 Deliverables
 
 - [ ] SQL migration script: `migrations/001_add_bot_id.sql`
 - [ ] Updated database schema in `database.rs`
-- [ ] All database methods accept `bot_id` parameter
+- [ ] All ~80 database methods accept `bot_id` parameter
 - [ ] Integration tests for multi-bot data isolation
 - [ ] Migration guide for production databases
 
-**Estimated Time**: 3-5 days
+**Estimated Time**: 6-8 days
 
 ---
 
 ### Phase 2: Configuration System Redesign
+
+> **Note**: This phase should be implemented FIRST as it has no dependencies and establishes the `bot_id` structure needed for database methods.
 
 #### 2.1 New Configuration Structures
 
@@ -176,8 +302,10 @@ Affected methods (~50 total):
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BotConfig {
-    /// Unique identifier for this bot instance
-    pub bot_id: String,
+    /// Discord application ID (used as bot_id in database)
+    /// Retrieved from Discord API on startup, not configured manually
+    #[serde(skip)]
+    pub application_id: Option<String>,
 
     /// Friendly name for logging
     pub name: String,
@@ -190,6 +318,17 @@ pub struct BotConfig {
 
     /// Optional: Default persona for this bot
     pub default_persona: Option<String>,
+
+    /// Optional: Dev mode guild ID for this bot
+    pub discord_guild_id: Option<String>,
+
+    /// Optional: Per-bot OpenAI model override
+    pub openai_model: Option<String>,
+
+    /// Optional: Per-bot conflict mediation settings
+    pub conflict_mediation_enabled: Option<bool>,
+    pub conflict_sensitivity: Option<String>,
+    pub mediation_cooldown_minutes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -205,6 +344,14 @@ pub struct MultiConfig {
 
     /// Logging configuration
     pub log_level: String,
+
+    /// Default OpenAI model (can be overridden per-bot)
+    pub openai_model: String,
+
+    /// Default conflict settings (can be overridden per-bot)
+    pub conflict_mediation_enabled: bool,
+    pub conflict_sensitivity: String,
+    pub mediation_cooldown_minutes: u64,
 }
 
 impl MultiConfig {
@@ -261,14 +408,15 @@ let config = MultiConfig::from_env_single_bot()?;
 
 #### 2.4 Deliverables
 
-- [ ] New config structures in `config.rs`
-- [ ] YAML/JSON file parsing support
-- [ ] Environment variable interpolation
-- [ ] Backward compatibility layer
+- [ ] New config structures in `config.rs` (`BotConfig`, `MultiConfig`)
+- [ ] YAML file parsing support (required for multi-bot)
+- [ ] Environment variable interpolation in YAML
+- [ ] Backward compatibility layer for single-bot env vars
 - [ ] Example `config.yaml` file
 - [ ] Configuration validation
+- [ ] Application ID fetching from Discord API on startup
 
-**Estimated Time**: 1-2 days
+**Estimated Time**: 2-3 days
 
 ---
 
@@ -412,7 +560,45 @@ tokio::select! {
 }
 ```
 
-#### 3.4 Deliverables
+#### 3.4 Hidden Blockers (Background Tasks)
+
+The following background tasks currently assume single-bot operation and need refactoring:
+
+**1. ReminderScheduler** ([src/reminder_scheduler.rs](../src/reminder_scheduler.rs))
+- Currently spawned once in `main()`, assumes single bot
+- Queries `get_pending_reminders()` without `bot_id`
+- Calls `get_user_persona(user_id)` without `bot_id`
+- **Solution**: Spawn one ReminderScheduler per bot, pass `bot_id` to constructor
+
+```rust
+// Per-bot reminder scheduler
+for bot_config in config.bots {
+    let scheduler = ReminderScheduler::new(
+        bot_config.application_id.clone(),  // NEW
+        database.clone(),
+        config.openai_model.clone(),
+    );
+    tokio::spawn(scheduler.run(http.clone()));
+}
+```
+
+**2. StartupNotifier** ([src/startup_notification.rs](../src/startup_notification.rs))
+- Uses static `FIRST_READY` flag - won't work with multiple bots in same process
+- Reads from `bot_settings` table which has no `bot_id`
+- **Solution**: Per-bot notifier instance, or shared notifier with bot tracking
+
+```rust
+// Change static flag to per-bot tracking
+static NOTIFIED_BOTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+```
+
+**3. Metrics Collection Loop**
+- Single instance spawned in `main()`
+- No `bot_id` in `performance_metrics` table
+- **Decision needed**: Per-bot metrics or global metrics?
+- **Recommendation**: Keep global for now, add `bot_id` to track source
+
+#### 3.5 Deliverables
 
 - [ ] Refactored `bin/bot.rs` with multi-client spawning
 - [ ] Shared resource management (Arc-wrapped)
@@ -420,8 +606,11 @@ tokio::select! {
 - [ ] Graceful shutdown mechanism
 - [ ] Bot restart logic for transient failures
 - [ ] Structured logging with bot_id context
+- [ ] Per-bot ReminderScheduler instances
+- [ ] Fix StartupNotifier static flag for multi-bot
+- [ ] Metrics collection with bot_id tracking
 
-**Estimated Time**: 2-4 days
+**Estimated Time**: 3-4 days
 
 ---
 
@@ -429,26 +618,38 @@ tokio::select! {
 
 #### 4.1 Update CommandHandler
 
-**Current**:
+**Current** (actual structure):
 ```rust
 pub struct CommandHandler {
     persona_manager: PersonaManager,
     database: Database,
     rate_limiter: RateLimiter,
     audio_transcriber: AudioTranscriber,
-    openai_api_key: String,
+    image_generator: ImageGenerator,
+    openai_model: String,
+    conflict_detector: ConflictDetector,
+    conflict_mediator: ConflictMediator,
+    conflict_enabled: bool,
+    conflict_sensitivity_threshold: f32,
+    start_time: std::time::Instant,
 }
 ```
 
 **New**:
 ```rust
 pub struct CommandHandler {
-    bot_id: String,  // NEW: Bot identity
+    bot_id: String,  // NEW: Bot identity (Discord application_id)
     persona_manager: PersonaManager,
     database: Database,
     rate_limiter: RateLimiter,
     audio_transcriber: AudioTranscriber,
-    openai_api_key: String,
+    image_generator: ImageGenerator,
+    openai_model: String,
+    conflict_detector: ConflictDetector,
+    conflict_mediator: ConflictMediator,
+    conflict_enabled: bool,
+    conflict_sensitivity_threshold: f32,
+    start_time: std::time::Instant,
 }
 
 impl CommandHandler {
@@ -456,7 +657,8 @@ impl CommandHandler {
         bot_id: String,  // NEW parameter
         persona_manager: Arc<PersonaManager>,
         database: Arc<Database>,
-        openai_api_key: String,
+        openai_model: String,
+        conflict_config: ConflictConfig,
     ) -> Self {
         Self {
             bot_id,
@@ -464,7 +666,13 @@ impl CommandHandler {
             database: (*database).clone(),
             rate_limiter: RateLimiter::new(),
             audio_transcriber: AudioTranscriber::new(),
-            openai_api_key,
+            image_generator: ImageGenerator::new(),
+            openai_model,
+            conflict_detector: ConflictDetector::new(conflict_config.sensitivity),
+            conflict_mediator: ConflictMediator::new(conflict_config.cooldown),
+            conflict_enabled: conflict_config.enabled,
+            conflict_sensitivity_threshold: conflict_config.sensitivity,
+            start_time: std::time::Instant::now(),
         }
     }
 }
@@ -531,20 +739,33 @@ Systematically update every database call to include `bot_id`:
 self.database.method_name(&self.bot_id, /* other params */).await?;
 ```
 
-#### 4.5 Deliverables
+#### 4.5 Additional Components Needing bot_id
+
+Beyond CommandHandler, these components also need bot_id context:
+
+- **ConflictDetector** - Conflict tracking is per-bot
+- **ConflictMediator** - Mediation cooldowns are per-bot
+- **MessageComponentHandler** - Persona selection needs bot context
+- **ImageGenerator** - Stateless, no changes needed
+
+#### 4.6 Deliverables
 
 - [ ] Add `bot_id` field to `CommandHandler`
-- [ ] Update all command handler methods
+- [ ] Update all command handler methods (~50 methods)
 - [ ] Update rate limiter to use composite keys
-- [ ] Update all database calls with bot_id
+- [ ] Update all database calls with bot_id (~80 calls)
+- [ ] Pass bot_id to ConflictDetector/ConflictMediator
+- [ ] Update MessageComponentHandler with bot_id
 - [ ] Add integration tests for context isolation
 - [ ] Verify no conversation bleeding between bots
 
-**Estimated Time**: 2-3 days
+**Estimated Time**: 4-5 days
 
 ---
 
-### Phase 5: HTTP Mode Multi-Bot Support (Optional)
+### Phase 5: HTTP Mode Multi-Bot Support (Deferred)
+
+> **Status**: This phase is **deferred** - focus on Gateway mode first. HTTP multi-bot support is optional/future enhancement.
 
 If supporting HTTP interaction mode for multiple bots:
 
@@ -902,29 +1123,39 @@ If multi-bot deployment fails:
 
 ---
 
-## Open Questions for Discussion
+## Design Decisions (Resolved)
 
-Before implementing, we should decide:
+The following decisions have been made for this implementation:
 
-1. **Data Sharing Philosophy**
-   - Should user preferences be per-bot or global with bot-specific overrides?
-   - Should conversation history ever be shared between bots?
+### 1. Data Sharing Philosophy
+**Decision**: **Global with per-bot overrides**
+- User preferences and settings default to global (shared across bots)
+- Can be overridden per-bot when needed
+- Conversation history is per-bot (no sharing)
 
-2. **Bot Identification**
-   - Use Discord application_id or custom bot_id?
-   - How to handle bot_id in logs/metrics?
+### 2. Bot Identification
+**Decision**: **Discord application_id**
+- Use the Discord application ID as the `bot_id` in database records
+- Provides consistency with Discord's identity system
+- Retrieved from Discord API on startup, not configured manually
 
-3. **Configuration Management**
-   - Require config file or support 100% env vars?
-   - Support remote config (HTTP, S3, etc.)?
+### 3. Configuration Management
+**Decision**: **YAML file required for multi-bot**
+- Multi-bot configuration requires `config.yaml`
+- Single-bot can still use environment variables (backward compatible)
+- No remote config support initially
 
-4. **Deployment Model**
-   - Single process for all bots or ability to run separately?
-   - Docker container per bot or monolithic?
+### 4. Deployment Model
+**Decision**: **Either/both supported**
+- Single process by default (tokio::spawn for each bot)
+- Architecture supports running bots as separate processes if desired
+- Docker: single container recommended, but per-bot containers possible
 
-5. **HTTP Mode Priority**
-   - Implement Phase 5 immediately or wait?
-   - Gateway-only for initial release?
+### 5. HTTP Mode Priority
+**Decision**: **Deferred**
+- Focus on Gateway mode first (Phases 1-4)
+- HTTP multi-bot support (Phase 5) is optional/future enhancement
+- Gateway-only for initial release
 
 ---
 
@@ -932,19 +1163,21 @@ Before implementing, we should decide:
 
 ### Major Changes Required
 
-| File | Changes | Lines | Complexity |
-|------|---------|-------|------------|
-| `src/config.rs` | Complete rewrite | ~100 | High |
-| `src/database.rs` | Add bot_id to all methods | ~300 | High |
-| `src/bin/bot.rs` | Multi-client spawning | ~150 | Medium |
-| `src/commands.rs` | Add bot_id context | ~200 | Medium |
-| `src/rate_limiter.rs` | Composite keys | ~50 | Low |
-| `src/bin/http_bot.rs` | Bot registry | ~100 | Medium |
+| File | Current Lines | Changes | Estimated New Lines | Complexity |
+|------|---------------|---------|---------------------|------------|
+| `src/config.rs` | 73 | Add MultiConfig, BotConfig, YAML parsing | ~200 | High |
+| `src/database.rs` | 1,777 | Add bot_id to all 80+ methods | ~2,200 | High |
+| `src/bin/bot.rs` | 377 | Multi-client spawning, per-bot tasks | ~500 | Medium |
+| `src/command_handler.rs` | 3,095 | Add bot_id field, propagate to all calls | ~3,200 | Medium |
+| `src/rate_limiter.rs` | 109 | Composite keys (bot_id, user_id) | ~130 | Low |
+| `src/reminder_scheduler.rs` | 199 | Add bot_id, per-bot instances | ~250 | Medium |
+| `src/startup_notification.rs` | 212 | Fix static flag for multi-bot | ~250 | Medium |
+| `src/bin/http_bot.rs` | 60 | Bot registry (Phase 5, deferred) | ~150 | Medium |
 
 ### New Files Needed
 
-- `migrations/001_add_bot_id.sql` - Database migration
-- `config.yaml.example` - Example configuration
+- `migrations/001_add_bot_id.sql` - Database migration script (~200 lines)
+- `config.yaml.example` - Example multi-bot configuration
 - `docs/multi-bot-setup.md` - User-facing setup guide
 - `tests/integration/multi_bot_tests.rs` - Integration tests
 
@@ -958,46 +1191,287 @@ Before implementing, we should decide:
 
 ## Appendix B: Database Schema (After Migration)
 
+All 21 tables with `bot_id` column (where applicable):
+
+### Core User Tables
+
 ```sql
--- User preferences (after migration)
+-- User preferences (Tier 1 - recreation required)
 CREATE TABLE user_preferences (
-    bot_id TEXT NOT NULL,
+    bot_id TEXT NOT NULL DEFAULT 'default',
     user_id TEXT NOT NULL,
-    persona TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
+    default_persona TEXT DEFAULT 'obi',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (bot_id, user_id)
 );
 
--- Conversation history (after migration)
+-- Extended user preferences (Tier 1 - recreation required)
+CREATE TABLE extended_user_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id TEXT NOT NULL,
+    preference_key TEXT NOT NULL,
+    preference_value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, user_id, preference_key)
+);
+
+-- Conversation history (Tier 3 - ALTER TABLE)
 CREATE TABLE conversation_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id TEXT NOT NULL,
+    bot_id TEXT NOT NULL DEFAULT 'default',
     user_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    persona TEXT,
     timestamp INTEGER NOT NULL
 );
 CREATE INDEX idx_conversation ON conversation_history(bot_id, user_id, channel_id, timestamp);
+```
 
--- Guild settings (after migration)
+### Guild & Channel Tables
+
+```sql
+-- Guild settings (Tier 1 - recreation required)
 CREATE TABLE guild_settings (
-    bot_id TEXT NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
     guild_id TEXT NOT NULL,
     setting_key TEXT NOT NULL,
-    setting_value TEXT NOT NULL,
-    PRIMARY KEY (bot_id, guild_id, setting_key)
+    setting_value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, guild_id, setting_key)
 );
 
--- Usage statistics (after migration)
+-- Channel settings (Tier 1 - recreation required)
+CREATE TABLE channel_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    verbosity TEXT DEFAULT 'concise',
+    conflict_enabled BOOLEAN DEFAULT 1,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, guild_id, channel_id)
+);
+```
+
+### Feature & Command Tables
+
+```sql
+-- Custom commands (Tier 1 - recreation required)
+CREATE TABLE custom_commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    command_name TEXT NOT NULL,
+    response_text TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL,
+    guild_id TEXT,
+    is_global BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, command_name, guild_id)
+);
+
+-- Feature flags (Tier 1 - recreation required)
+CREATE TABLE feature_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    feature_name TEXT NOT NULL,
+    enabled BOOLEAN DEFAULT 0,
+    user_id TEXT,
+    guild_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, feature_name, user_id, guild_id)
+);
+
+-- Feature versions (Tier 3 - ALTER TABLE)
+CREATE TABLE feature_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    feature_name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    guild_id TEXT,
+    toggled_by TEXT,
+    enabled BOOLEAN,
+    changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Interaction Tables
+
+```sql
+-- Reminders (Tier 3 - ALTER TABLE)
+CREATE TABLE reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    reminder_text TEXT NOT NULL,
+    remind_at TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed BOOLEAN DEFAULT 0,
+    completed_at DATETIME
+);
+CREATE INDEX idx_reminder_time ON reminders(bot_id, remind_at, completed);
+
+-- User bookmarks (Tier 3 - ALTER TABLE)
+CREATE TABLE user_bookmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    bookmark_name TEXT,
+    bookmark_note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Message metadata (Tier 3 - ALTER TABLE)
+CREATE TABLE message_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    message_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    attachment_urls TEXT,
+    embed_data TEXT,
+    reactions TEXT,
+    edited_at DATETIME,
+    deleted_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Interaction sessions (Tier 3 - ALTER TABLE)
+CREATE TABLE interaction_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id TEXT NOT NULL,
+    guild_id TEXT,
+    session_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+    session_end DATETIME,
+    message_count INTEGER DEFAULT 0,
+    last_activity DATETIME
+);
+```
+
+### Conflict Detection Tables
+
+```sql
+-- Conflict detection (Tier 2 - parent table, migrate first)
+CREATE TABLE conflict_detection (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    channel_id TEXT NOT NULL,
+    guild_id TEXT,
+    participants TEXT NOT NULL,
+    detection_type TEXT NOT NULL,
+    confidence_score REAL,
+    last_message_id TEXT,
+    mediation_triggered BOOLEAN DEFAULT 0,
+    mediation_message_id TEXT,
+    first_detected DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_detected DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME
+);
+
+-- Mediation history (Tier 2 - has FK to conflict_detection)
+CREATE TABLE mediation_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    conflict_id INTEGER NOT NULL,
+    channel_id TEXT NOT NULL,
+    mediation_message TEXT,
+    effectiveness_rating INTEGER,
+    follow_up_messages INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(conflict_id) REFERENCES conflict_detection(id)
+);
+
+-- User interaction patterns (Tier 1 - recreation required)
+CREATE TABLE user_interaction_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    user_id_a TEXT NOT NULL,
+    user_id_b TEXT NOT NULL,
+    channel_id TEXT,
+    guild_id TEXT,
+    interaction_count INTEGER DEFAULT 0,
+    last_interaction DATETIME,
+    conflict_incidents INTEGER DEFAULT 0,
+    avg_response_time_ms INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, user_id_a, user_id_b, channel_id)
+);
+```
+
+### Analytics Tables
+
+```sql
+-- Usage stats (Tier 3 - ALTER TABLE)
 CREATE TABLE usage_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_id TEXT NOT NULL,
+    bot_id TEXT NOT NULL DEFAULT 'default',
     user_id TEXT NOT NULL,
     command TEXT NOT NULL,
+    persona TEXT,
     timestamp INTEGER NOT NULL
 );
 CREATE INDEX idx_usage ON usage_stats(bot_id, timestamp);
+
+-- Daily analytics (Tier 1 - recreation required)
+CREATE TABLE daily_analytics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    date DATE NOT NULL,
+    total_messages INTEGER DEFAULT 0,
+    unique_users INTEGER DEFAULT 0,
+    total_commands INTEGER DEFAULT 0,
+    total_errors INTEGER DEFAULT 0,
+    persona_usage TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bot_id, date)
+);
+
+-- Performance metrics (Tier 3 - ALTER TABLE)
+CREATE TABLE performance_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    metric_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT,
+    metadata TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Error logs (Tier 3 - ALTER TABLE)
+CREATE TABLE error_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bot_id TEXT NOT NULL DEFAULT 'default',
+    error_type TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    stack_trace TEXT,
+    user_id TEXT,
+    channel_id TEXT,
+    command TEXT,
+    metadata TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Global Tables (No bot_id)
+
+```sql
+-- Bot settings (remains global, shared across all bots)
+CREATE TABLE bot_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting_key TEXT NOT NULL UNIQUE,
+    setting_value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ---
@@ -1046,11 +1520,20 @@ log_level: "info"
 This implementation plan provides a comprehensive roadmap to enable multi-Discord-app support. The phased approach minimizes risk while delivering incremental value. The architecture maintains the existing persona system's elegance while adding the flexibility to run multiple bot identities simultaneously.
 
 **Key Success Factors**:
-- Careful database migration with rollback plan
+- Careful database migration with rollback plan (tiered approach for SQLite)
 - Comprehensive testing at each phase
 - Backward compatibility during transition
 - Clear separation of shared vs. per-bot resources
+- Discord application_id as canonical bot identifier
 
-**Estimated Total Effort**: ~2 weeks for core implementation (Phases 1-4)
+**Estimated Total Effort**: ~3-4 weeks for core implementation (Phases 1-4)
 
-**Questions?** Review the "Open Questions" section and make decisions before beginning implementation.
+| Phase | Duration | Dependencies |
+|-------|----------|--------------|
+| Phase 2: Config | 2-3 days | None (implement first) |
+| Phase 1: Database | 6-8 days | Phase 2 |
+| Phase 3: Gateway | 3-4 days | Phases 1, 2 |
+| Phase 4: Context | 4-5 days | Phases 1, 2, 3 |
+| Phase 5: HTTP (deferred) | 1-2 days | All above |
+
+**Questions?** All design decisions have been resolved - see the "Design Decisions" section above.
