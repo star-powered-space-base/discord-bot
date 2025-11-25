@@ -19,6 +19,25 @@ use tokio::sync::Mutex;
 /// Default bot_id used for backward compatibility with existing data
 pub const DEFAULT_BOT_ID: &str = "default";
 
+/// Startup notification session information
+pub struct StartupSession {
+    pub session_id: String,
+    pub owner_message_id: Option<String>,
+    pub channel_message_id: Option<String>,
+    pub created_at: String,
+    pub last_updated: String,
+}
+
+/// Information about a bot that started in a session
+pub struct StartedBot {
+    pub bot_id: String,
+    pub bot_name: String,
+    pub version: String,
+    pub guilds_count: i64,
+    pub shard_info: Option<String>,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Clone)]
 pub struct Database {
     connection: Arc<Mutex<Connection>>,
@@ -488,6 +507,42 @@ impl Database {
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_openai_daily_user_date
              ON openai_usage_daily(bot_id, user_id, date)",
+        )?;
+
+        // Startup Notification Session Tracking
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS bot_startup_session (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL UNIQUE,
+                owner_message_id TEXT,
+                channel_message_id TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_startup_session_created
+             ON bot_startup_session(created_at)",
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS bot_startup_bots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                bot_id TEXT NOT NULL,
+                bot_name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                guilds_count INTEGER NOT NULL,
+                shard_info TEXT,
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(session_id, bot_id)
+            )",
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_startup_bots_session
+             ON bot_startup_bots(session_id)",
         )?;
 
         Ok(())
@@ -2085,6 +2140,183 @@ impl Database {
         statement.bind((2, format!("-{}", days).as_str()))?;
         statement.next()?;
         info!("Cleaned up openai_usage_daily older than {} days (bot: {bot_id})", days);
+        Ok(())
+    }
+
+    // ========================================================================
+    // Startup Notification Session Methods
+    // ========================================================================
+
+    /// Get a recent startup session (within N minutes)
+    pub async fn get_recent_startup_session(&self, minutes: i64) -> Result<Option<String>> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "SELECT session_id FROM bot_startup_session
+             WHERE last_updated >= datetime('now', ? || ' minutes')
+             ORDER BY last_updated DESC LIMIT 1",
+        )?;
+        statement.bind((1, format!("-{}", minutes).as_str()))?;
+
+        if let Ok(State::Row) = statement.next() {
+            Ok(Some(statement.read::<String, _>(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Create a new startup session
+    pub async fn create_startup_session(&self, session_id: &str) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "INSERT INTO bot_startup_session (session_id) VALUES (?)",
+        )?;
+        statement.bind((1, session_id))?;
+        statement.next()?;
+        info!("Created startup session: {}", session_id);
+        Ok(())
+    }
+
+    /// Get session info
+    pub async fn get_startup_session(&self, session_id: &str) -> Result<StartupSession> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "SELECT session_id, owner_message_id, channel_message_id, created_at, last_updated
+             FROM bot_startup_session WHERE session_id = ?",
+        )?;
+        statement.bind((1, session_id))?;
+
+        if let Ok(State::Row) = statement.next() {
+            Ok(StartupSession {
+                session_id: statement.read::<String, _>(0)?,
+                owner_message_id: statement.read::<String, _>(1).ok(),
+                channel_message_id: statement.read::<String, _>(2).ok(),
+                created_at: statement.read::<String, _>(3)?,
+                last_updated: statement.read::<String, _>(4)?,
+            })
+        } else {
+            anyhow::bail!("Session not found: {}", session_id)
+        }
+    }
+
+    /// Update owner message ID for session
+    pub async fn update_session_owner_message(&self, session_id: &str, message_id: &str) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "UPDATE bot_startup_session
+             SET owner_message_id = ?, last_updated = CURRENT_TIMESTAMP
+             WHERE session_id = ?",
+        )?;
+        statement.bind((1, message_id))?;
+        statement.bind((2, session_id))?;
+        statement.next()?;
+        Ok(())
+    }
+
+    /// Update channel message ID for session
+    pub async fn update_session_channel_message(&self, session_id: &str, message_id: &str) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "UPDATE bot_startup_session
+             SET channel_message_id = ?, last_updated = CURRENT_TIMESTAMP
+             WHERE session_id = ?",
+        )?;
+        statement.bind((1, message_id))?;
+        statement.bind((2, session_id))?;
+        statement.next()?;
+        Ok(())
+    }
+
+    /// Touch session to update last_updated timestamp
+    pub async fn touch_startup_session(&self, session_id: &str) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "UPDATE bot_startup_session SET last_updated = CURRENT_TIMESTAMP WHERE session_id = ?",
+        )?;
+        statement.bind((1, session_id))?;
+        statement.next()?;
+        Ok(())
+    }
+
+    /// Add bot to startup session
+    pub async fn add_bot_to_startup_session(
+        &self,
+        session_id: &str,
+        bot_id: &str,
+        bot_name: &str,
+        version: &str,
+        guilds_count: i64,
+        shard_info: Option<String>,
+    ) -> Result<()> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "INSERT OR REPLACE INTO bot_startup_bots
+             (session_id, bot_id, bot_name, version, guilds_count, shard_info, started_at)
+             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        )?;
+        statement.bind((1, session_id))?;
+        statement.bind((2, bot_id))?;
+        statement.bind((3, bot_name))?;
+        statement.bind((4, version))?;
+        statement.bind((5, guilds_count))?;
+        statement.bind((6, shard_info.as_deref().unwrap_or("")))?;
+        statement.next()?;
+        info!("Added bot {} to session {}", bot_name, session_id);
+        Ok(())
+    }
+
+    /// Get all bots in a session
+    pub async fn get_bots_in_session(&self, session_id: &str) -> Result<Vec<StartedBot>> {
+        let conn = self.connection.lock().await;
+        let mut statement = conn.prepare(
+            "SELECT bot_id, bot_name, version, guilds_count, shard_info, started_at
+             FROM bot_startup_bots
+             WHERE session_id = ?
+             ORDER BY started_at ASC",
+        )?;
+        statement.bind((1, session_id))?;
+
+        let mut bots = Vec::new();
+        while let Ok(State::Row) = statement.next() {
+            let shard_info_str = statement.read::<String, _>(4)?;
+            let started_at_str = statement.read::<String, _>(5)?;
+
+            bots.push(StartedBot {
+                bot_id: statement.read::<String, _>(0)?,
+                bot_name: statement.read::<String, _>(1)?,
+                version: statement.read::<String, _>(2)?,
+                guilds_count: statement.read::<i64, _>(3)?,
+                shard_info: if shard_info_str.is_empty() { None } else { Some(shard_info_str) },
+                started_at: chrono::DateTime::parse_from_rfc3339(&started_at_str)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|_| chrono::Utc::now()),
+            });
+        }
+        Ok(bots)
+    }
+
+    /// Cleanup old startup sessions (older than N hours)
+    pub async fn cleanup_old_startup_sessions(&self, hours: i64) -> Result<()> {
+        let conn = self.connection.lock().await;
+
+        // Delete bots first (to avoid foreign key issues if they existed)
+        let mut stmt1 = conn.prepare(
+            "DELETE FROM bot_startup_bots
+             WHERE session_id IN (
+                 SELECT session_id FROM bot_startup_session
+                 WHERE created_at < datetime('now', ? || ' hours')
+             )",
+        )?;
+        stmt1.bind((1, format!("-{}", hours).as_str()))?;
+        stmt1.next()?;
+
+        // Then delete sessions
+        let mut stmt2 = conn.prepare(
+            "DELETE FROM bot_startup_session WHERE created_at < datetime('now', ? || ' hours')",
+        )?;
+        stmt2.bind((1, format!("-{}", hours).as_str()))?;
+        stmt2.next()?;
+
+        info!("Cleaned up startup sessions older than {} hours", hours);
         Ok(())
     }
 }

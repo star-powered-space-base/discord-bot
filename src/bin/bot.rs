@@ -151,7 +151,7 @@ impl EventHandler for Handler {
                 notified.insert(self.bot_id.clone());
                 drop(notified); // Release lock before async call
                 self.startup_notifier
-                    .send_if_enabled(&ctx.http, &ready)
+                    .send_if_enabled(&ctx.http, &ready, &self.bot_config)
                     .await;
             }
         }

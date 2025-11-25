@@ -260,6 +260,7 @@ fn test_multi_config_multiple_bots() {
                 conflict_sensitivity: Some("high".to_string()),
                 mediation_cooldown_minutes: Some(10),
                 commands: None,
+                startup_notification_enabled: Some(true),
             },
             BotConfig {
                 application_id: Some("app2".to_string()),
@@ -273,6 +274,7 @@ fn test_multi_config_multiple_bots() {
                 conflict_sensitivity: None,
                 mediation_cooldown_minutes: None,
                 commands: None,
+                startup_notification_enabled: Some(true),
             },
         ],
         openai_api_key: "sk-test".to_string(),
@@ -314,6 +316,7 @@ fn test_bot_id_accessor() {
         conflict_sensitivity: None,
         mediation_cooldown_minutes: None,
         commands: None,
+        startup_notification_enabled: Some(true),
     };
     assert_eq!(bot_with_id.bot_id(), "123456789");
 
@@ -330,6 +333,7 @@ fn test_bot_id_accessor() {
         conflict_sensitivity: None,
         mediation_cooldown_minutes: None,
         commands: None,
+        startup_notification_enabled: Some(true),
     };
     assert_eq!(bot_without_id.bot_id(), "Fallback Bot");
 }

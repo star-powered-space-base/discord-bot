@@ -114,6 +114,14 @@ pub struct BotConfig {
     /// Only these commands will be registered with Discord
     #[serde(default)]
     pub commands: Option<Vec<String>>,
+
+    /// Per-bot startup notification enabled toggle
+    #[serde(default = "default_startup_enabled")]
+    pub startup_notification_enabled: Option<bool>,
+}
+
+fn default_startup_enabled() -> Option<bool> {
+    Some(true)  // Backward compatible - enabled by default
 }
 
 impl BotConfig {
@@ -258,6 +266,7 @@ impl MultiConfig {
             conflict_sensitivity: None,
             mediation_cooldown_minutes: None,
             commands: None, // Use all commands
+            startup_notification_enabled: Some(true), // Default enabled
         };
 
         Ok(MultiConfig {
@@ -626,6 +635,7 @@ mediation_cooldown_minutes: 10
             conflict_sensitivity: Some("high".to_string()),
             mediation_cooldown_minutes: Some(15),
             commands: None,
+            startup_notification_enabled: Some(true),
         };
 
         assert_eq!(bot.bot_id(), "123456789");
@@ -649,6 +659,7 @@ mediation_cooldown_minutes: 10
             conflict_sensitivity: None,
             mediation_cooldown_minutes: None,
             commands: None,
+            startup_notification_enabled: Some(true),
         };
 
         // Should fall back to name when no application_id
@@ -693,6 +704,7 @@ mediation_cooldown_minutes: 10
                 conflict_sensitivity: Some("invalid".to_string()),
                 mediation_cooldown_minutes: None,
                 commands: None,
+                startup_notification_enabled: Some(true),
             }],
             openai_api_key: "key".to_string(),
             database_path: "db".to_string(),
@@ -722,6 +734,7 @@ mediation_cooldown_minutes: 10
             conflict_sensitivity: Some("high".to_string()),
             mediation_cooldown_minutes: Some(10),
             commands: None,
+            startup_notification_enabled: Some(true),
         };
 
         let multi = MultiConfig {
