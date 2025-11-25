@@ -25,6 +25,12 @@ pub struct PersonaManager {
     personas: HashMap<String, Persona>,
 }
 
+impl Default for PersonaManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PersonaManager {
     pub fn new() -> Self {
         let mut personas = HashMap::new();
@@ -84,10 +90,10 @@ impl PersonaManager {
 
         // Apply modifier first
         let with_modifier = match modifier {
-            Some("explain") => format!("{} Focus on providing clear explanations.", base_prompt),
-            Some("simple") => format!("{} Explain in a simple and concise way. Give analogies a beginner might understand.", base_prompt),
-            Some("steps") => format!("{} Break this out into clear, actionable steps.", base_prompt),
-            Some("recipe") => format!("{} Respond with a recipe if this prompt has food. If it does not have food, return 'Give me some food to work with'.", base_prompt),
+            Some("explain") => format!("{base_prompt} Focus on providing clear explanations."),
+            Some("simple") => format!("{base_prompt} Explain in a simple and concise way. Give analogies a beginner might understand."),
+            Some("steps") => format!("{base_prompt} Break this out into clear, actionable steps."),
+            Some("recipe") => format!("{base_prompt} Respond with a recipe if this prompt has food. If it does not have food, return 'Give me some food to work with'."),
             _ => base_prompt,
         };
 
@@ -106,7 +112,7 @@ impl PersonaManager {
         if suffix.is_empty() {
             prompt.to_string()
         } else {
-            format!("{}{}", prompt, suffix)
+            format!("{prompt}{suffix}")
         }
     }
 }

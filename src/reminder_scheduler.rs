@@ -48,7 +48,7 @@ impl ReminderScheduler {
             check_interval.tick().await;
 
             if let Err(e) = self.process_due_reminders(&http).await {
-                error!("❌ Error processing reminders: {}", e);
+                error!("❌ Error processing reminders: {e}");
             }
         }
     }
@@ -66,13 +66,13 @@ impl ReminderScheduler {
         for (id, user_id, channel_id, reminder_text) in reminders {
             match self.deliver_reminder(http, id, &user_id, &channel_id, &reminder_text).await {
                 Ok(_) => {
-                    info!("✅ Delivered reminder #{} to user {}", id, user_id);
+                    info!("✅ Delivered reminder #{id} to user {user_id}");
                 }
                 Err(e) => {
-                    warn!("⚠️ Failed to deliver reminder #{}: {}", id, e);
+                    warn!("⚠️ Failed to deliver reminder #{id}: {e}");
                     // Still mark as complete to avoid spam - user can set a new reminder
                     if let Err(e) = self.database.complete_reminder(id).await {
-                        error!("❌ Failed to mark reminder {} as complete: {}", id, e);
+                        error!("❌ Failed to mark reminder {id} as complete: {e}");
                     }
                 }
             }
@@ -104,7 +104,7 @@ impl ReminderScheduler {
         let user = UserId(user_id.parse::<u64>()?);
 
         // Send the reminder with a user mention
-        let message = format!("<@{}>\n\n{}", user, reminder_message);
+        let message = format!("<@{user}>\n\n{reminder_message}");
 
         channel.say(http, &message).await?;
 
@@ -117,13 +117,11 @@ impl ReminderScheduler {
     async fn generate_reminder_message(&self, persona_name: &str, persona_prompt: &str, reminder_text: &str) -> Result<String> {
         // Create a prompt to generate a persona-flavored reminder
         let system_prompt = format!(
-            "{}\n\n\
+            "{persona_prompt}\n\n\
             Your task is to deliver a reminder to the user in your characteristic style. \
             Keep it brief (1-2 sentences max) but in-character. \
             Make it feel personal and warm, not robotic. \
-            The reminder message is: \"{}\"",
-            persona_prompt,
-            reminder_text
+            The reminder message is: \"{reminder_text}\""
         );
 
         let chat_completion = ChatCompletion::builder(&self.openai_model, vec![
@@ -157,7 +155,7 @@ impl ReminderScheduler {
                 Ok(response)
             }
             Err(e) => {
-                warn!("⚠️ Failed to generate persona reminder, using fallback: {}", e);
+                warn!("⚠️ Failed to generate persona reminder, using fallback: {e}");
                 Ok(self.fallback_reminder(persona_name, reminder_text))
             }
         }
@@ -165,12 +163,12 @@ impl ReminderScheduler {
 
     fn fallback_reminder(&self, persona_name: &str, reminder_text: &str) -> String {
         match persona_name {
-            "obi" => format!("The Force whispers that the time has come, young one. You asked me to remind you: **{}**", reminder_text),
-            "muppet" => format!("*waves arms excitedly* Hey hey hey! Time for your reminder! You said: **{}**", reminder_text),
-            "chef" => format!("*taps spoon on counter* Just like checking on a dish in the oven, here's your reminder: **{}**", reminder_text),
-            "teacher" => format!("Time for your reminder! Here's what you wanted to remember: **{}**", reminder_text),
-            "analyst" => format!("Reminder notification: **{}**", reminder_text),
-            _ => format!("⏰ Reminder: **{}**", reminder_text),
+            "obi" => format!("The Force whispers that the time has come, young one. You asked me to remind you: **{reminder_text}**"),
+            "muppet" => format!("*waves arms excitedly* Hey hey hey! Time for your reminder! You said: **{reminder_text}**"),
+            "chef" => format!("*taps spoon on counter* Just like checking on a dish in the oven, here's your reminder: **{reminder_text}**"),
+            "teacher" => format!("Time for your reminder! Here's what you wanted to remember: **{reminder_text}**"),
+            "analyst" => format!("Reminder notification: **{reminder_text}**"),
+            _ => format!("⏰ Reminder: **{reminder_text}**"),
         }
     }
 }

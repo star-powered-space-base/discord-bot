@@ -76,17 +76,17 @@ impl CommandHandler {
               request_id, user_id, channel_id, guild_id,
               msg.content.chars().take(100).collect::<String>());
 
-        debug!("[{}] 🔍 Checking rate limit for user: {}", request_id, user_id);
+        debug!("[{request_id}] 🔍 Checking rate limit for user: {user_id}");
         if !self.rate_limiter.wait_for_rate_limit(&user_id).await {
-            warn!("[{}] 🚫 Rate limit exceeded for user: {}", request_id, user_id);
-            debug!("[{}] 📤 Sending rate limit message to Discord", request_id);
+            warn!("[{request_id}] 🚫 Rate limit exceeded for user: {user_id}");
+            debug!("[{request_id}] 📤 Sending rate limit message to Discord");
             msg.channel_id
                 .say(&ctx.http, "You're sending messages too quickly! Please slow down.")
                 .await?;
-            info!("[{}] ✅ Rate limit message sent successfully", request_id);
+            info!("[{request_id}] ✅ Rate limit message sent successfully");
             return Ok(());
         }
-        debug!("[{}] ✅ Rate limit check passed", request_id);
+        debug!("[{request_id}] ✅ Rate limit check passed");
 
         // Check audio_transcription feature flag
         let audio_enabled = if let Some(gid) = guild_id_opt {
@@ -107,7 +107,7 @@ impl CommandHandler {
 
         // Store guild messages FIRST (needed for conflict detection to have data)
         if !is_dm && !content.is_empty() && !content.starts_with('!') && !content.starts_with('/') {
-            debug!("[{}] 💾 Storing guild message for analysis", request_id);
+            debug!("[{request_id}] 💾 Storing guild message for analysis");
             self.database.store_message(&user_id, &channel_id, "user", content, None).await?;
         }
 
@@ -119,9 +119,9 @@ impl CommandHandler {
         };
 
         if !is_dm && self.conflict_enabled && guild_conflict_enabled && !content.is_empty() && !content.starts_with('!') && !content.starts_with('/') {
-            debug!("[{}] 🔍 Running conflict detection analysis", request_id);
+            debug!("[{request_id}] 🔍 Running conflict detection analysis");
             if let Err(e) = self.check_and_mediate_conflicts(ctx, msg, &channel_id, guild_id_opt).await {
-                warn!("[{}] ⚠️ Conflict detection error: {}", request_id, e);
+                warn!("[{request_id}] ⚠️ Conflict detection error: {e}");
                 // Don't fail the whole message processing if conflict detection fails
             }
         }
@@ -130,7 +130,7 @@ impl CommandHandler {
             info!("[{}] 🎯 Processing command: {}", request_id, content.split_whitespace().next().unwrap_or(""));
             self.handle_command_with_id(ctx, msg, request_id).await?;
         } else if is_dm && !content.is_empty() {
-            info!("[{}] 💬 Processing DM message (auto-response mode)", request_id);
+            info!("[{request_id}] 💬 Processing DM message (auto-response mode)");
             self.handle_dm_message_with_id(ctx, msg, request_id).await?;
         } else if !is_dm && self.is_bot_mentioned(ctx, msg).await? && !content.is_empty() {
             // Check mention_responses guild setting
@@ -143,18 +143,18 @@ impl CommandHandler {
             };
 
             if mention_enabled {
-                info!("[{}] 🏷️ Bot mentioned in channel - responding", request_id);
+                info!("[{request_id}] 🏷️ Bot mentioned in channel - responding");
                 self.handle_mention_message_with_id(ctx, msg, request_id).await?;
             } else {
-                debug!("[{}] ℹ️ Bot mentioned but mention_responses disabled for guild", request_id);
+                debug!("[{request_id}] ℹ️ Bot mentioned but mention_responses disabled for guild");
             }
         } else if !is_dm && !content.is_empty() {
-            debug!("[{}] ℹ️ Guild message stored (no bot response needed)", request_id);
+            debug!("[{request_id}] ℹ️ Guild message stored (no bot response needed)");
         } else {
-            debug!("[{}] ℹ️ Message ignored (empty or DM)", request_id);
+            debug!("[{request_id}] ℹ️ Message ignored (empty or DM)");
         }
 
-        info!("[{}] ✅ Message processing completed", request_id);
+        info!("[{request_id}] ✅ Message processing completed");
         Ok(())
     }
 
@@ -179,7 +179,7 @@ impl CommandHandler {
     async fn fetch_thread_messages(&self, ctx: &Context, msg: &Message, limit: u8, request_id: Uuid) -> Result<Vec<(String, String)>> {
         use serenity::builder::GetMessages;
 
-        debug!("[{}] 🧵 Fetching up to {} messages from thread", request_id, limit);
+        debug!("[{request_id}] 🧵 Fetching up to {limit} messages from thread");
 
         // Fetch messages from the thread (Discord API limit is 100)
         let messages = msg.channel_id.messages(&ctx.http, |builder: &mut GetMessages| {
@@ -223,36 +223,36 @@ impl CommandHandler {
                request_id, user_id, user_message.chars().take(100).collect::<String>());
 
         // Get user's persona
-        debug!("[{}] 🎭 Fetching user persona from database", request_id);
+        debug!("[{request_id}] 🎭 Fetching user persona from database");
         let user_persona = self.database.get_user_persona(&user_id).await?;
-        debug!("[{}] 🎭 User persona: {}", request_id, user_persona);
+        debug!("[{request_id}] 🎭 User persona: {user_persona}");
 
         // Store user message in conversation history
-        debug!("[{}] 💾 Storing user message to conversation history", request_id);
+        debug!("[{request_id}] 💾 Storing user message to conversation history");
         self.database.store_message(&user_id, &channel_id, "user", user_message, Some(&user_persona)).await?;
-        debug!("[{}] ✅ User message stored successfully", request_id);
+        debug!("[{request_id}] ✅ User message stored successfully");
 
         // Retrieve conversation history (last 40 messages = ~20 exchanges)
-        debug!("[{}] 📚 Retrieving conversation history", request_id);
+        debug!("[{request_id}] 📚 Retrieving conversation history");
         let conversation_history = self.database.get_conversation_history(&user_id, &channel_id, 40).await?;
         info!("[{}] 📚 Retrieved {} historical messages", request_id, conversation_history.len());
 
         // Show typing indicator while processing
-        debug!("[{}] ⌨️ Starting typing indicator", request_id);
+        debug!("[{request_id}] ⌨️ Starting typing indicator");
         let typing = msg.channel_id.start_typing(&ctx.http)?;
 
         // Build system prompt without modifier (conversational mode)
-        debug!("[{}] 📝 Building system prompt | Persona: {}", request_id, user_persona);
+        debug!("[{request_id}] 📝 Building system prompt | Persona: {user_persona}");
         let system_prompt = self.persona_manager.get_system_prompt(&user_persona, None);
         debug!("[{}] ✅ System prompt generated | Length: {} chars", request_id, system_prompt.len());
 
         // Log usage
-        debug!("[{}] 📊 Logging usage to database", request_id);
+        debug!("[{request_id}] 📊 Logging usage to database");
         self.database.log_usage(&user_id, "dm_chat", Some(&user_persona)).await?;
-        debug!("[{}] ✅ Usage logged successfully", request_id);
+        debug!("[{request_id}] ✅ Usage logged successfully");
 
         // Get AI response with conversation history
-        info!("[{}] 🚀 Calling OpenAI API for DM response", request_id);
+        info!("[{request_id}] 🚀 Calling OpenAI API for DM response");
         match self.get_ai_response_with_id(&system_prompt, user_message, conversation_history, request_id).await {
             Ok(ai_response) => {
                 info!("[{}] ✅ OpenAI response received | Response length: {}",
@@ -260,11 +260,11 @@ impl CommandHandler {
 
                 // Stop typing
                 typing.stop();
-                debug!("[{}] ⌨️ Stopped typing indicator", request_id);
+                debug!("[{request_id}] ⌨️ Stopped typing indicator");
 
                 // Send response (handle long messages)
                 if ai_response.len() > 2000 {
-                    debug!("[{}] 📄 Response too long, splitting into chunks", request_id);
+                    debug!("[{request_id}] 📄 Response too long, splitting into chunks");
                     let chunks: Vec<&str> = ai_response.as_bytes()
                         .chunks(2000)
                         .map(|chunk| std::str::from_utf8(chunk).unwrap_or(""))
@@ -280,22 +280,22 @@ impl CommandHandler {
                             debug!("[{}] ✅ Chunk {} sent successfully", request_id, i + 1);
                         }
                     }
-                    info!("[{}] ✅ All DM response chunks sent successfully", request_id);
+                    info!("[{request_id}] ✅ All DM response chunks sent successfully");
                 } else {
                     debug!("[{}] 📤 Sending DM response ({} chars)", request_id, ai_response.len());
                     msg.channel_id.say(&ctx.http, &ai_response).await?;
-                    info!("[{}] ✅ DM response sent successfully", request_id);
+                    info!("[{request_id}] ✅ DM response sent successfully");
                 }
 
                 // Store assistant response in conversation history
-                debug!("[{}] 💾 Storing assistant response to conversation history", request_id);
+                debug!("[{request_id}] 💾 Storing assistant response to conversation history");
                 self.database.store_message(&user_id, &channel_id, "assistant", &ai_response, Some(&user_persona)).await?;
-                debug!("[{}] ✅ Assistant response stored successfully", request_id);
+                debug!("[{request_id}] ✅ Assistant response stored successfully");
             }
             Err(e) => {
                 typing.stop();
-                debug!("[{}] ⌨️ Stopped typing indicator", request_id);
-                error!("[{}] ❌ AI response error in DM: {}", request_id, e);
+                debug!("[{request_id}] ⌨️ Stopped typing indicator");
+                error!("[{request_id}] ❌ AI response error in DM: {e}");
 
                 let error_message = if e.to_string().contains("timed out") {
                     "⏱️ Sorry, I'm taking too long to think. Please try again with a shorter message."
@@ -303,13 +303,13 @@ impl CommandHandler {
                     "❌ Sorry, I encountered an error. Please try again later."
                 };
 
-                debug!("[{}] 📤 Sending error message to user", request_id);
+                debug!("[{request_id}] 📤 Sending error message to user");
                 msg.channel_id.say(&ctx.http, error_message).await?;
-                warn!("[{}] ⚠️ Error message sent to user after AI failure", request_id);
+                warn!("[{request_id}] ⚠️ Error message sent to user after AI failure");
             }
         }
 
-        info!("[{}] ✅ DM message processing completed", request_id);
+        info!("[{request_id}] ✅ DM message processing completed");
         Ok(())
     }
 
@@ -324,9 +324,9 @@ impl CommandHandler {
                request_id, user_id, user_message.chars().take(100).collect::<String>());
 
         // Get user's persona with guild default fallback
-        debug!("[{}] 🎭 Fetching user persona from database", request_id);
+        debug!("[{request_id}] 🎭 Fetching user persona from database");
         let user_persona = self.database.get_user_persona_with_guild(&user_id, guild_id_opt).await?;
-        debug!("[{}] 🎭 User persona: {}", request_id, user_persona);
+        debug!("[{request_id}] 🎭 User persona: {user_persona}");
 
         // Get max_context_messages from guild settings
         let max_context = if let Some(gid) = guild_id_opt {
@@ -339,21 +339,21 @@ impl CommandHandler {
 
         // Check if message is in a thread
         let is_thread = self.is_in_thread(ctx, msg).await?;
-        debug!("[{}] 🧵 Is thread: {} | Max context: {}", request_id, is_thread, max_context);
+        debug!("[{request_id}] 🧵 Is thread: {is_thread} | Max context: {max_context}");
 
         // Retrieve conversation history based on context type
         let conversation_history = if is_thread {
             // Thread context: Fetch messages from Discord
-            info!("[{}] 🧵 Fetching thread context from Discord", request_id);
+            info!("[{request_id}] 🧵 Fetching thread context from Discord");
             self.fetch_thread_messages(ctx, msg, max_context as u8, request_id).await?
         } else {
             // Channel context: Use database history
-            info!("[{}] 📚 Fetching channel context from database", request_id);
+            info!("[{request_id}] 📚 Fetching channel context from database");
 
             // Store user message in conversation history for channels
-            debug!("[{}] 💾 Storing user message to conversation history", request_id);
+            debug!("[{request_id}] 💾 Storing user message to conversation history");
             self.database.store_message(&user_id, &channel_id, "user", user_message, Some(&user_persona)).await?;
-            debug!("[{}] ✅ User message stored successfully", request_id);
+            debug!("[{request_id}] ✅ User message stored successfully");
 
             self.database.get_conversation_history(&user_id, &channel_id, max_context).await?
         };
@@ -361,7 +361,7 @@ impl CommandHandler {
         info!("[{}] 📚 Retrieved {} historical messages for context", request_id, conversation_history.len());
 
         // Show typing indicator while processing
-        debug!("[{}] ⌨️ Starting typing indicator", request_id);
+        debug!("[{request_id}] ⌨️ Starting typing indicator");
         let typing = msg.channel_id.start_typing(&ctx.http)?;
 
         // Get channel verbosity for guild channels
@@ -372,17 +372,17 @@ impl CommandHandler {
         };
 
         // Build system prompt without modifier (conversational mode), with verbosity
-        debug!("[{}] 📝 Building system prompt | Persona: {} | Verbosity: {}", request_id, user_persona, verbosity);
+        debug!("[{request_id}] 📝 Building system prompt | Persona: {user_persona} | Verbosity: {verbosity}");
         let system_prompt = self.persona_manager.get_system_prompt_with_verbosity(&user_persona, None, &verbosity);
         debug!("[{}] ✅ System prompt generated | Length: {} chars", request_id, system_prompt.len());
 
         // Log usage
-        debug!("[{}] 📊 Logging usage to database", request_id);
+        debug!("[{request_id}] 📊 Logging usage to database");
         self.database.log_usage(&user_id, "mention_chat", Some(&user_persona)).await?;
-        debug!("[{}] ✅ Usage logged successfully", request_id);
+        debug!("[{request_id}] ✅ Usage logged successfully");
 
         // Get AI response with conversation history
-        info!("[{}] 🚀 Calling OpenAI API for mention response", request_id);
+        info!("[{request_id}] 🚀 Calling OpenAI API for mention response");
         match self.get_ai_response_with_id(&system_prompt, user_message, conversation_history, request_id).await {
             Ok(ai_response) => {
                 info!("[{}] ✅ OpenAI response received | Response length: {}",
@@ -390,11 +390,11 @@ impl CommandHandler {
 
                 // Stop typing
                 typing.stop();
-                debug!("[{}] ⌨️ Stopped typing indicator", request_id);
+                debug!("[{request_id}] ⌨️ Stopped typing indicator");
 
                 // Send response as threaded reply (handle long messages)
                 if ai_response.len() > 2000 {
-                    debug!("[{}] 📄 Response too long, splitting into chunks", request_id);
+                    debug!("[{request_id}] 📄 Response too long, splitting into chunks");
                     let chunks: Vec<&str> = ai_response.as_bytes()
                         .chunks(2000)
                         .map(|chunk| std::str::from_utf8(chunk).unwrap_or(""))
@@ -407,7 +407,7 @@ impl CommandHandler {
                         if !first_chunk.trim().is_empty() {
                             debug!("[{}] 📤 Sending first chunk as reply ({} chars)", request_id, first_chunk.len());
                             msg.reply(&ctx.http, first_chunk).await?;
-                            debug!("[{}] ✅ First chunk sent as reply", request_id);
+                            debug!("[{request_id}] ✅ First chunk sent as reply");
                         }
                     }
 
@@ -420,26 +420,26 @@ impl CommandHandler {
                             debug!("[{}] ✅ Chunk {} sent successfully", request_id, i + 2);
                         }
                     }
-                    info!("[{}] ✅ All mention response chunks sent successfully", request_id);
+                    info!("[{request_id}] ✅ All mention response chunks sent successfully");
                 } else {
                     debug!("[{}] 📤 Sending mention response as reply ({} chars)", request_id, ai_response.len());
                     msg.reply(&ctx.http, &ai_response).await?;
-                    info!("[{}] ✅ Mention response sent successfully", request_id);
+                    info!("[{request_id}] ✅ Mention response sent successfully");
                 }
 
                 // Store assistant response in conversation history (only for channels, not threads)
                 if !is_thread {
-                    debug!("[{}] 💾 Storing assistant response to conversation history", request_id);
+                    debug!("[{request_id}] 💾 Storing assistant response to conversation history");
                     self.database.store_message(&user_id, &channel_id, "assistant", &ai_response, Some(&user_persona)).await?;
-                    debug!("[{}] ✅ Assistant response stored successfully", request_id);
+                    debug!("[{request_id}] ✅ Assistant response stored successfully");
                 } else {
-                    debug!("[{}] 🧵 Skipping database storage for thread (will fetch from Discord next time)", request_id);
+                    debug!("[{request_id}] 🧵 Skipping database storage for thread (will fetch from Discord next time)");
                 }
             }
             Err(e) => {
                 typing.stop();
-                debug!("[{}] ⌨️ Stopped typing indicator", request_id);
-                error!("[{}] ❌ AI response error in mention: {}", request_id, e);
+                debug!("[{request_id}] ⌨️ Stopped typing indicator");
+                error!("[{request_id}] ❌ AI response error in mention: {e}");
 
                 let error_message = if e.to_string().contains("timed out") {
                     "⏱️ Sorry, I'm taking too long to think. Please try again with a shorter message."
@@ -447,13 +447,13 @@ impl CommandHandler {
                     "❌ Sorry, I encountered an error. Please try again later."
                 };
 
-                debug!("[{}] 📤 Sending error message to user as reply", request_id);
+                debug!("[{request_id}] 📤 Sending error message to user as reply");
                 msg.reply(&ctx.http, error_message).await?;
-                warn!("[{}] ⚠️ Error message sent to user after AI failure", request_id);
+                warn!("[{request_id}] ⚠️ Error message sent to user after AI failure");
             }
         }
 
-        info!("[{}] ✅ Mention message processing completed", request_id);
+        info!("[{request_id}] ✅ Mention message processing completed");
         Ok(())
     }
 
@@ -466,10 +466,10 @@ impl CommandHandler {
         info!("[{}] 📥 Slash command received | Command: {} | User: {} | Channel: {} | Guild: {}", 
               request_id, command.data.name, user_id, channel_id, guild_id);
         
-        debug!("[{}] 🔍 Checking rate limit for user: {}", request_id, user_id);
+        debug!("[{request_id}] 🔍 Checking rate limit for user: {user_id}");
         if !self.rate_limiter.wait_for_rate_limit(&user_id).await {
-            warn!("[{}] 🚫 Rate limit exceeded for user: {} in slash command", request_id, user_id);
-            debug!("[{}] 📤 Sending rate limit response to Discord", request_id);
+            warn!("[{request_id}] 🚫 Rate limit exceeded for user: {user_id} in slash command");
+            debug!("[{request_id}] 📤 Sending rate limit response to Discord");
             command
                 .create_interaction_response(&ctx.http, |response| {
                     response
@@ -479,32 +479,32 @@ impl CommandHandler {
                         })
                 })
                 .await?;
-            info!("[{}] ✅ Rate limit response sent successfully", request_id);
+            info!("[{request_id}] ✅ Rate limit response sent successfully");
             return Ok(());
         }
-        debug!("[{}] ✅ Rate limit check passed", request_id);
+        debug!("[{request_id}] ✅ Rate limit check passed");
 
         info!("[{}] 🎯 Processing slash command: {} from user: {}", request_id, command.data.name, user_id);
 
         match command.data.name.as_str() {
             "ping" => {
-                debug!("[{}] 🏓 Handling ping command", request_id);
+                debug!("[{request_id}] 🏓 Handling ping command");
                 self.handle_slash_ping_with_id(ctx, command, request_id).await?;
             }
             "help" => {
-                debug!("[{}] 📚 Handling help command", request_id);
+                debug!("[{request_id}] 📚 Handling help command");
                 self.handle_slash_help_with_id(ctx, command, request_id).await?;
             }
             "personas" => {
-                debug!("[{}] 🎭 Handling personas command", request_id);
+                debug!("[{request_id}] 🎭 Handling personas command");
                 self.handle_slash_personas_with_id(ctx, command, request_id).await?;
             }
             "set_persona" => {
-                debug!("[{}] ⚙️ Handling set_persona command", request_id);
+                debug!("[{request_id}] ⚙️ Handling set_persona command");
                 self.handle_slash_set_persona_with_id(ctx, command, request_id).await?;
             }
             "forget" => {
-                debug!("[{}] 🧹 Handling forget command", request_id);
+                debug!("[{request_id}] 🧹 Handling forget command");
                 self.handle_slash_forget_with_id(ctx, command, request_id).await?;
             }
             "hey" | "explain" | "simple" | "steps" | "recipe" => {
@@ -512,7 +512,7 @@ impl CommandHandler {
                 self.handle_slash_ai_command_with_id(ctx, command, request_id).await?;
             }
             "imagine" => {
-                debug!("[{}] 🎨 Handling imagine command", request_id);
+                debug!("[{request_id}] 🎨 Handling imagine command");
                 self.handle_slash_imagine_with_id(ctx, command, request_id).await?;
             }
             "Analyze Message" | "Explain Message" => {
@@ -520,64 +520,64 @@ impl CommandHandler {
                 self.handle_context_menu_message_with_id(ctx, command, request_id).await?;
             }
             "Analyze User" => {
-                debug!("[{}] 👤 Handling context menu user command", request_id);
+                debug!("[{request_id}] 👤 Handling context menu user command");
                 self.handle_context_menu_user_with_id(ctx, command, request_id).await?;
             }
             // Admin commands
             "set_channel_verbosity" => {
-                debug!("[{}] ⚙️ Handling set_channel_verbosity command", request_id);
+                debug!("[{request_id}] ⚙️ Handling set_channel_verbosity command");
                 self.handle_set_channel_verbosity(ctx, command, request_id).await?;
             }
             "set_guild_setting" => {
-                debug!("[{}] ⚙️ Handling set_guild_setting command", request_id);
+                debug!("[{request_id}] ⚙️ Handling set_guild_setting command");
                 self.handle_set_guild_setting(ctx, command, request_id).await?;
             }
             "settings" => {
-                debug!("[{}] ⚙️ Handling settings command", request_id);
+                debug!("[{request_id}] ⚙️ Handling settings command");
                 self.handle_settings(ctx, command, request_id).await?;
             }
             "admin_role" => {
-                debug!("[{}] ⚙️ Handling admin_role command", request_id);
+                debug!("[{request_id}] ⚙️ Handling admin_role command");
                 self.handle_admin_role(ctx, command, request_id).await?;
             }
             // Reminder commands
             "remind" => {
-                debug!("[{}] ⏰ Handling remind command", request_id);
+                debug!("[{request_id}] ⏰ Handling remind command");
                 self.handle_remind(ctx, command, request_id).await?;
             }
             "reminders" => {
-                debug!("[{}] 📋 Handling reminders command", request_id);
+                debug!("[{request_id}] 📋 Handling reminders command");
                 self.handle_reminders(ctx, command, request_id).await?;
             }
             "introspect" => {
-                debug!("[{}] 🔍 Handling introspect command", request_id);
+                debug!("[{request_id}] 🔍 Handling introspect command");
                 self.handle_introspect(ctx, command, request_id).await?;
             }
             // Utility commands
             "status" => {
-                debug!("[{}] 📊 Handling status command", request_id);
+                debug!("[{request_id}] 📊 Handling status command");
                 self.handle_slash_status(ctx, command, request_id).await?;
             }
             "version" => {
-                debug!("[{}] 📦 Handling version command", request_id);
+                debug!("[{request_id}] 📦 Handling version command");
                 self.handle_slash_version(ctx, command, request_id).await?;
             }
             "uptime" => {
-                debug!("[{}] ⏱️ Handling uptime command", request_id);
+                debug!("[{request_id}] ⏱️ Handling uptime command");
                 self.handle_slash_uptime(ctx, command, request_id).await?;
             }
             // Feature management commands
             "features" => {
-                debug!("[{}] 📋 Handling features command", request_id);
+                debug!("[{request_id}] 📋 Handling features command");
                 self.handle_slash_features(ctx, command, request_id).await?;
             }
             "toggle" => {
-                debug!("[{}] 🔀 Handling toggle command", request_id);
+                debug!("[{request_id}] 🔀 Handling toggle command");
                 self.handle_slash_toggle(ctx, command, request_id).await?;
             }
             _ => {
                 warn!("[{}] ❓ Unknown slash command: {}", request_id, command.data.name);
-                debug!("[{}] 📤 Sending unknown command response to Discord", request_id);
+                debug!("[{request_id}] 📤 Sending unknown command response to Discord");
                 command
                     .create_interaction_response(&ctx.http, |response| {
                         response
@@ -587,11 +587,11 @@ impl CommandHandler {
                             })
                     })
                     .await?;
-                info!("[{}] ✅ Unknown command response sent successfully", request_id);
+                info!("[{request_id}] ✅ Unknown command response sent successfully");
             }
         }
 
-        info!("[{}] ✅ Slash command processing completed", request_id);
+        info!("[{request_id}] ✅ Slash command processing completed");
         Ok(())
     }
 
@@ -600,7 +600,7 @@ impl CommandHandler {
         let parts: Vec<&str> = msg.content.split_whitespace().collect();
         
         if parts.is_empty() {
-            debug!("[{}] 🔍 Empty command parts array", request_id);
+            debug!("[{request_id}] 🔍 Empty command parts array");
             return Ok(());
         }
 
@@ -612,35 +612,35 @@ impl CommandHandler {
 
         match command {
             "!ping" => {
-                debug!("[{}] 🏓 Processing ping command", request_id);
+                debug!("[{request_id}] 🏓 Processing ping command");
                 self.database.log_usage(&user_id, "ping", None).await?;
-                debug!("[{}] 📤 Sending pong response to Discord", request_id);
+                debug!("[{request_id}] 📤 Sending pong response to Discord");
                 msg.channel_id.say(&ctx.http, "Pong!").await?;
-                info!("[{}] ✅ Pong response sent successfully", request_id);
+                info!("[{request_id}] ✅ Pong response sent successfully");
             }
             "/help" => {
-                debug!("[{}] 📚 Processing help command", request_id);
+                debug!("[{request_id}] 📚 Processing help command");
                 self.handle_help_command_with_id(ctx, msg, request_id).await?;
             }
             "/personas" => {
-                debug!("[{}] 🎭 Processing personas command", request_id);
+                debug!("[{request_id}] 🎭 Processing personas command");
                 self.handle_personas_command_with_id(ctx, msg, request_id).await?;
             }
             "/set_persona" => {
-                debug!("[{}] ⚙️ Processing set_persona command", request_id);
+                debug!("[{request_id}] ⚙️ Processing set_persona command");
                 self.handle_set_persona_command_with_id(ctx, msg, args, request_id).await?;
             }
             "/hey" | "/explain" | "/simple" | "/steps" | "/recipe" => {
-                debug!("[{}] 🤖 Processing AI command: {}", request_id, command);
+                debug!("[{request_id}] 🤖 Processing AI command: {command}");
                 self.handle_ai_command_with_id(ctx, msg, command, args, request_id).await?;
             }
             _ => {
-                debug!("[{}] ❓ Unknown command: {}", request_id, command);
-                debug!("[{}] 📤 Sending unknown command response to Discord", request_id);
+                debug!("[{request_id}] ❓ Unknown command: {command}");
+                debug!("[{request_id}] 📤 Sending unknown command response to Discord");
                 msg.channel_id
                     .say(&ctx.http, "Unknown command. Use `/help` to see available commands.")
                     .await?;
-                info!("[{}] ✅ Unknown command response sent successfully", request_id);
+                info!("[{request_id}] ✅ Unknown command response sent successfully");
             }
         }
 
@@ -708,7 +708,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         
         let user_id = command.user.id.to_string();
         let current_persona = self.database.get_user_persona(&user_id).await?;
-        response.push_str(&format!("\nYour current persona: `{}`", current_persona));
+        response.push_str(&format!("\nYour current persona: `{current_persona}`"));
         response.push_str("\n\n**Quick Switch:**\nUse the dropdown below to change your persona!");
         
         command
@@ -750,7 +750,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|message| {
-                        message.content(&format!("Your persona has been set to: `{}`", persona_name))
+                        message.content(format!("Your persona has been set to: `{persona_name}`"))
                     })
             })
             .await?;
@@ -771,7 +771,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             _ => "message",
         };
 
-        debug!("[{}] 🔍 Extracting option '{}' from command parameters", request_id, option_name);
+        debug!("[{request_id}] 🔍 Extracting option '{option_name}' from command parameters");
         let user_message = get_string_option(&command.data.options, option_name)
             .ok_or_else(|| anyhow::anyhow!("Missing message parameter"))?;
 
@@ -779,9 +779,9 @@ Use the buttons below for more help or to try custom prompts!"#;
         debug!("[{}] 👤 Processing for user: {} | Message: '{}'", 
                request_id, user_id, user_message.chars().take(100).collect::<String>());
 
-        debug!("[{}] 🔍 Getting user persona from database", request_id);
+        debug!("[{request_id}] 🔍 Getting user persona from database");
         let user_persona = self.database.get_user_persona(&user_id).await?;
-        debug!("[{}] 🎭 User persona: {}", request_id, user_persona);
+        debug!("[{request_id}] 🎭 User persona: {user_persona}");
         
         let modifier = match command.data.name.as_str() {
             "explain" => Some("explain"),
@@ -798,31 +798,30 @@ Use the buttons below for more help or to try custom prompts!"#;
             "concise".to_string() // Default to concise for DMs
         };
 
-        debug!("[{}] 📝 Building system prompt | Persona: {} | Modifier: {:?} | Verbosity: {}",
-               request_id, user_persona, modifier, verbosity);
+        debug!("[{request_id}] 📝 Building system prompt | Persona: {user_persona} | Modifier: {modifier:?} | Verbosity: {verbosity}");
         let system_prompt = self.persona_manager.get_system_prompt_with_verbosity(&user_persona, modifier, &verbosity);
         debug!("[{}] ✅ System prompt generated | Length: {} chars", request_id, system_prompt.len());
 
-        debug!("[{}] 📊 Logging usage to database", request_id);
+        debug!("[{request_id}] 📊 Logging usage to database");
         self.database.log_usage(&user_id, &command.data.name, Some(&user_persona)).await?;
-        debug!("[{}] ✅ Usage logged successfully", request_id);
+        debug!("[{request_id}] ✅ Usage logged successfully");
 
         // Immediately defer the interaction to prevent timeout (required within 3 seconds)
-        info!("[{}] ⏰ Deferring Discord interaction response (3s rule)", request_id);
-        debug!("[{}] 📤 Sending DeferredChannelMessageWithSource to Discord", request_id);
+        info!("[{request_id}] ⏰ Deferring Discord interaction response (3s rule)");
+        debug!("[{request_id}] 📤 Sending DeferredChannelMessageWithSource to Discord");
         command
             .create_interaction_response(&ctx.http, |response| {
                 response.kind(serenity::model::application::interaction::InteractionResponseType::DeferredChannelMessageWithSource)
             })
             .await
             .map_err(|e| {
-                error!("[{}] ❌ Failed to defer interaction response: {}", request_id, e);
+                error!("[{request_id}] ❌ Failed to defer interaction response: {e}");
                 anyhow::anyhow!("Failed to defer interaction: {}", e)
             })?;
-        info!("[{}] ✅ Interaction deferred successfully", request_id);
+        info!("[{request_id}] ✅ Interaction deferred successfully");
 
         // Get AI response and edit the message
-        info!("[{}] 🚀 Calling OpenAI API", request_id);
+        info!("[{request_id}] 🚀 Calling OpenAI API");
         match self.get_ai_response_with_id(&system_prompt, &user_message, Vec::new(), request_id).await {
             Ok(ai_response) => {
                 let processing_time = start_time.elapsed();
@@ -830,7 +829,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                       request_id, processing_time, ai_response.len());
                 
                 if ai_response.len() > 2000 {
-                    debug!("[{}] 📄 Response too long, splitting into chunks", request_id);
+                    debug!("[{request_id}] 📄 Response too long, splitting into chunks");
                     // For long responses, edit with the first part and send follow-ups
                     let chunks: Vec<&str> = ai_response.as_bytes()
                         .chunks(2000)
@@ -848,10 +847,10 @@ Use the buttons below for more help or to try custom prompts!"#;
                             })
                             .await
                             .map_err(|e| {
-                                error!("[{}] ❌ Failed to edit original interaction response: {}", request_id, e);
+                                error!("[{request_id}] ❌ Failed to edit original interaction response: {e}");
                                 anyhow::anyhow!("Failed to edit original response: {}", e)
                             })?;
-                        info!("[{}] ✅ Original interaction response edited successfully", request_id);
+                        info!("[{request_id}] ✅ Original interaction response edited successfully");
                     }
 
                     // Send remaining chunks as follow-up messages
@@ -871,7 +870,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                             debug!("[{}] ✅ Follow-up message {} sent successfully", request_id, i + 2);
                         }
                     }
-                    info!("[{}] ✅ All response chunks sent successfully", request_id);
+                    info!("[{request_id}] ✅ All response chunks sent successfully");
                 } else {
                     debug!("[{}] 📤 Editing original interaction response with complete response ({} chars)", 
                            request_id, ai_response.len());
@@ -881,44 +880,44 @@ Use the buttons below for more help or to try custom prompts!"#;
                         })
                         .await
                         .map_err(|e| {
-                            error!("[{}] ❌ Failed to edit original interaction response: {}", request_id, e);
+                            error!("[{request_id}] ❌ Failed to edit original interaction response: {e}");
                             anyhow::anyhow!("Failed to edit original response: {}", e)
                         })?;
-                    info!("[{}] ✅ Original interaction response edited successfully", request_id);
+                    info!("[{request_id}] ✅ Original interaction response edited successfully");
                 }
                 
                 let total_time = start_time.elapsed();
-                info!("[{}] 🎉 AI command completed successfully | Total time: {:?}", request_id, total_time);
+                info!("[{request_id}] 🎉 AI command completed successfully | Total time: {total_time:?}");
             }
             Err(e) => {
                 let processing_time = start_time.elapsed();
-                error!("[{}] ❌ OpenAI API error after {:?}: {}", request_id, processing_time, e);
+                error!("[{request_id}] ❌ OpenAI API error after {processing_time:?}: {e}");
                 
                 let error_message = if e.to_string().contains("timed out") {
-                    debug!("[{}] ⏱️ Error type: timeout", request_id);
+                    debug!("[{request_id}] ⏱️ Error type: timeout");
                     "⏱️ **Request timed out** - The AI service is taking too long to respond. Please try again with a shorter message or try again later."
                 } else if e.to_string().contains("OpenAI API error") {
-                    debug!("[{}] 🔧 Error type: OpenAI API error", request_id);
+                    debug!("[{request_id}] 🔧 Error type: OpenAI API error");
                     "🔧 **AI service error** - There's an issue with the AI service. Please try again in a moment."
                 } else {
-                    debug!("[{}] ❓ Error type: unknown - {}", request_id, e);
+                    debug!("[{request_id}] ❓ Error type: unknown - {e}");
                     "❌ **Error processing request** - Something went wrong. Please try again later."
                 };
                 
-                debug!("[{}] 📤 Sending error message to Discord: '{}'", request_id, error_message);
+                debug!("[{request_id}] 📤 Sending error message to Discord: '{error_message}'");
                 command
                     .edit_original_interaction_response(&ctx.http, |response| {
                         response.content(error_message)
                     })
                     .await
                     .map_err(|discord_err| {
-                        error!("[{}] ❌ Failed to send error message to Discord: {}", request_id, discord_err);
+                        error!("[{request_id}] ❌ Failed to send error message to Discord: {discord_err}");
                         anyhow::anyhow!("Failed to send error response: {}", discord_err)
                     })?;
-                info!("[{}] ✅ Error message sent to Discord successfully", request_id);
+                info!("[{request_id}] ✅ Error message sent to Discord successfully");
                 
                 let total_time = start_time.elapsed();
-                error!("[{}] 💥 AI command failed | Total time: {:?}", request_id, total_time);
+                error!("[{request_id}] 💥 AI command failed | Total time: {total_time:?}");
             }
         }
 
@@ -951,7 +950,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             return Ok(());
         }
 
-        debug!("[{}] 🎨 Starting image generation | Command: imagine", request_id);
+        debug!("[{request_id}] 🎨 Starting image generation | Command: imagine");
 
         // Get the prompt (required)
         let prompt = get_string_option(&command.data.options, "prompt")
@@ -959,12 +958,12 @@ Use the buttons below for more help or to try custom prompts!"#;
 
         // Get optional size (default: square)
         let size = get_string_option(&command.data.options, "size")
-            .and_then(|s| ImageSize::from_str(&s))
+            .and_then(|s| ImageSize::parse(&s))
             .unwrap_or(ImageSize::Square);
 
         // Get optional style (default: vivid)
         let style = get_string_option(&command.data.options, "style")
-            .and_then(|s| ImageStyle::from_str(&s))
+            .and_then(|s| ImageStyle::parse(&s))
             .unwrap_or(ImageStyle::Vivid);
 
         info!("[{}] 🎨 Generating image | User: {} | Size: {} | Style: {} | Prompt: '{}'",
@@ -975,14 +974,14 @@ Use the buttons below for more help or to try custom prompts!"#;
         self.database.log_usage(&user_id, "imagine", None).await?;
 
         // Defer the response immediately (DALL-E can take 10-30 seconds)
-        info!("[{}] ⏰ Deferring Discord interaction response (DALL-E generation)", request_id);
+        info!("[{request_id}] ⏰ Deferring Discord interaction response (DALL-E generation)");
         command
             .create_interaction_response(&ctx.http, |response| {
                 response.kind(serenity::model::application::interaction::InteractionResponseType::DeferredChannelMessageWithSource)
             })
             .await
             .map_err(|e| {
-                error!("[{}] ❌ Failed to defer interaction response: {}", request_id, e);
+                error!("[{request_id}] ❌ Failed to defer interaction response: {e}");
                 anyhow::anyhow!("Failed to defer interaction: {}", e)
             })?;
 
@@ -990,7 +989,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         match self.image_generator.generate_image(&prompt, size, style).await {
             Ok(generated_image) => {
                 let generation_time = start_time.elapsed();
-                info!("[{}] ✅ Image generated | Time: {:?}", request_id, generation_time);
+                info!("[{request_id}] ✅ Image generated | Time: {generation_time:?}");
 
                 // Download the image
                 match self.image_generator.download_image(&generated_image.url).await {
@@ -998,10 +997,10 @@ Use the buttons below for more help or to try custom prompts!"#;
                         debug!("[{}] 📥 Image downloaded | Size: {} bytes", request_id, image_bytes.len());
 
                         // Build the response message
-                        let mut response_text = format!("🎨 **Generated Image**\n> {}", prompt);
+                        let mut response_text = format!("🎨 **Generated Image**\n> {prompt}");
                         if let Some(revised) = &generated_image.revised_prompt {
                             if revised != &prompt {
-                                response_text.push_str(&format!("\n\n*DALL-E revised prompt:* _{}_", revised));
+                                response_text.push_str(&format!("\n\n*DALL-E revised prompt:* _{revised}_"));
                             }
                         }
 
@@ -1012,7 +1011,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                             })
                             .await
                             .map_err(|e| {
-                                error!("[{}] ❌ Failed to edit interaction response: {}", request_id, e);
+                                error!("[{request_id}] ❌ Failed to edit interaction response: {e}");
                                 anyhow::anyhow!("Failed to edit response: {}", e)
                             })?;
 
@@ -1026,15 +1025,15 @@ Use the buttons below for more help or to try custom prompts!"#;
                             })
                             .await
                             .map_err(|e| {
-                                error!("[{}] ❌ Failed to send image attachment: {}", request_id, e);
+                                error!("[{request_id}] ❌ Failed to send image attachment: {e}");
                                 anyhow::anyhow!("Failed to send image: {}", e)
                             })?;
 
                         let total_time = start_time.elapsed();
-                        info!("[{}] ✅ Image sent successfully | Total time: {:?}", request_id, total_time);
+                        info!("[{request_id}] ✅ Image sent successfully | Total time: {total_time:?}");
                     }
                     Err(e) => {
-                        error!("[{}] ❌ Failed to download image: {}", request_id, e);
+                        error!("[{request_id}] ❌ Failed to download image: {e}");
                         command
                             .edit_original_interaction_response(&ctx.http, |response| {
                                 response.content("❌ **Error** - Failed to download the generated image. Please try again.")
@@ -1045,7 +1044,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             }
             Err(e) => {
                 let processing_time = start_time.elapsed();
-                error!("[{}] ❌ DALL-E error after {:?}: {}", request_id, processing_time, e);
+                error!("[{request_id}] ❌ DALL-E error after {processing_time:?}: {e}");
 
                 let error_message = if e.to_string().contains("content_policy") || e.to_string().contains("safety") {
                     "🚫 **Content Policy Violation** - Your prompt was rejected by DALL-E's safety system. Please try a different prompt."
@@ -1070,22 +1069,22 @@ Use the buttons below for more help or to try custom prompts!"#;
 
     // Placeholder methods with basic logging - can be enhanced later
     async fn handle_slash_ping_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 🏓 Processing ping slash command", request_id);
+        debug!("[{request_id}] 🏓 Processing ping slash command");
         self.handle_slash_ping(ctx, command).await
     }
 
     async fn handle_slash_help_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 📚 Processing help slash command", request_id);
+        debug!("[{request_id}] 📚 Processing help slash command");
         self.handle_slash_help(ctx, command).await
     }
 
     async fn handle_slash_personas_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 🎭 Processing personas slash command", request_id);
+        debug!("[{request_id}] 🎭 Processing personas slash command");
         self.handle_slash_personas(ctx, command).await
     }
 
     async fn handle_slash_set_persona_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] ⚙️ Processing set_persona slash command", request_id);
+        debug!("[{request_id}] ⚙️ Processing set_persona slash command");
         self.handle_slash_set_persona(ctx, command).await
     }
 
@@ -1093,15 +1092,15 @@ Use the buttons below for more help or to try custom prompts!"#;
         let user_id = command.user.id.to_string();
         let channel_id = command.channel_id.to_string();
 
-        debug!("[{}] 🧹 Processing forget command for user: {} in channel: {}", request_id, user_id, channel_id);
+        debug!("[{request_id}] 🧹 Processing forget command for user: {user_id} in channel: {channel_id}");
 
         // Clear conversation history
-        info!("[{}] 🗑️ Clearing conversation history", request_id);
+        info!("[{request_id}] 🗑️ Clearing conversation history");
         self.database.clear_conversation_history(&user_id, &channel_id).await?;
-        info!("[{}] ✅ Conversation history cleared successfully", request_id);
+        info!("[{request_id}] ✅ Conversation history cleared successfully");
 
         // Send confirmation response
-        debug!("[{}] 📤 Sending confirmation to Discord", request_id);
+        debug!("[{request_id}] 📤 Sending confirmation to Discord");
         command
             .create_interaction_response(&ctx.http, |response| {
                 response
@@ -1112,37 +1111,37 @@ Use the buttons below for more help or to try custom prompts!"#;
             })
             .await?;
 
-        info!("[{}] ✅ Forget command completed successfully", request_id);
+        info!("[{request_id}] ✅ Forget command completed successfully");
         Ok(())
     }
 
     async fn handle_context_menu_message_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 🔍 Processing context menu message command", request_id);
+        debug!("[{request_id}] 🔍 Processing context menu message command");
         self.handle_context_menu_message(ctx, command).await
     }
 
     async fn handle_context_menu_user_with_id(&self, ctx: &Context, command: &ApplicationCommandInteraction, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 👤 Processing context menu user command", request_id);
+        debug!("[{request_id}] 👤 Processing context menu user command");
         self.handle_context_menu_user(ctx, command).await
     }
 
     async fn handle_help_command_with_id(&self, ctx: &Context, msg: &Message, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 📚 Processing help text command", request_id);
+        debug!("[{request_id}] 📚 Processing help text command");
         self.handle_help_command(ctx, msg).await
     }
 
     async fn handle_personas_command_with_id(&self, ctx: &Context, msg: &Message, request_id: Uuid) -> Result<()> {
-        debug!("[{}] 🎭 Processing personas text command", request_id);
+        debug!("[{request_id}] 🎭 Processing personas text command");
         self.handle_personas_command(ctx, msg).await
     }
 
     async fn handle_set_persona_command_with_id(&self, ctx: &Context, msg: &Message, args: &[&str], request_id: Uuid) -> Result<()> {
-        debug!("[{}] ⚙️ Processing set_persona text command", request_id);
+        debug!("[{request_id}] ⚙️ Processing set_persona text command");
         self.handle_set_persona_command(ctx, msg, args).await
     }
 
     async fn handle_ai_command_with_id(&self, ctx: &Context, msg: &Message, command: &str, args: &[&str], request_id: Uuid) -> Result<()> {
-        debug!("[{}] 🤖 Processing AI text command: {}", request_id, command);
+        debug!("[{request_id}] 🤖 Processing AI text command: {command}");
         self.handle_ai_command(ctx, msg, command, args).await
     }
 
@@ -1165,7 +1164,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             _ => self.persona_manager.get_system_prompt(&user_persona, None)
         };
 
-        let prompt = format!("Please analyze this message: \"{}\"", message_content);
+        let prompt = format!("Please analyze this message: \"{message_content}\"");
         
         self.database.log_usage(&user_id, &command.data.name, Some(&user_persona)).await?;
 
@@ -1187,7 +1186,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                     .await?;
             }
             Err(e) => {
-                error!("AI response error in context menu: {}", e);
+                error!("AI response error in context menu: {e}");
                 let error_message = if e.to_string().contains("timed out") {
                     "⏱️ **Analysis timed out** - The AI service is taking too long. Please try again."
                 } else {
@@ -1215,7 +1214,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         let user_persona = self.database.get_user_persona(&user_id).await?;
         let system_prompt = self.persona_manager.get_system_prompt(&user_persona, Some("explain"));
         
-        let prompt = format!("Please provide general information about Discord users and their roles in communities. The user being analyzed is: {}", target_user);
+        let prompt = format!("Please provide general information about Discord users and their roles in communities. The user being analyzed is: {target_user}");
         
         self.database.log_usage(&user_id, "analyze_user", Some(&user_persona)).await?;
 
@@ -1229,7 +1228,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         // Get AI response and edit the message
         match self.get_ai_response(&system_prompt, &prompt).await {
             Ok(ai_response) => {
-                let response_text = format!("👤 **User Analysis:**\n{}", ai_response);
+                let response_text = format!("👤 **User Analysis:**\n{ai_response}");
                 command
                     .edit_original_interaction_response(&ctx.http, |response| {
                         response.content(&response_text)
@@ -1237,7 +1236,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                     .await?;
             }
             Err(e) => {
-                error!("AI response error in user context menu: {}", e);
+                error!("AI response error in user context menu: {e}");
                 let error_message = if e.to_string().contains("timed out") {
                     "⏱️ **Analysis timed out** - The AI service is taking too long. Please try again."
                 } else {
@@ -1287,7 +1286,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         
         let user_id = msg.author.id.to_string();
         let current_persona = self.database.get_user_persona(&user_id).await?;
-        response.push_str(&format!("\nYour current persona: `{}`", current_persona));
+        response.push_str(&format!("\nYour current persona: `{current_persona}`"));
         
         msg.channel_id.say(&ctx.http, response).await?;
         Ok(())
@@ -1313,7 +1312,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         self.database.set_user_persona(&user_id, persona_name).await?;
         
         msg.channel_id
-            .say(&ctx.http, &format!("Your persona has been set to: `{}`", persona_name))
+            .say(&ctx.http, &format!("Your persona has been set to: `{persona_name}`"))
             .await?;
         Ok(())
     }
@@ -1360,7 +1359,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                 }
             }
             Err(e) => {
-                error!("OpenAI API error: {}", e);
+                error!("OpenAI API error: {e}");
                 let error_message = if e.to_string().contains("timed out") {
                     "⏱️ **Request timed out** - The AI service is taking too long to respond. Please try again with a shorter message or try again later."
                 } else if e.to_string().contains("OpenAI API error") {
@@ -1389,7 +1388,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         debug!("[{}] 📝 User message preview: '{}'",
                request_id, user_message.chars().take(100).collect::<String>());
 
-        debug!("[{}] 🔨 Building OpenAI message objects", request_id);
+        debug!("[{request_id}] 🔨 Building OpenAI message objects");
         let mut messages = vec![
             ChatCompletionMessage {
                 role: ChatCompletionMessageRole::System,
@@ -1431,28 +1430,28 @@ Use the buttons below for more help or to try custom prompts!"#;
         debug!("[{}] ✅ OpenAI message objects built successfully | Message count: {}", request_id, messages.len());
 
         // Add timeout to the OpenAI API call (45 seconds)
-        debug!("[{}] 🚀 Initiating OpenAI API call with 45-second timeout", request_id);
+        debug!("[{request_id}] 🚀 Initiating OpenAI API call with 45-second timeout");
         let chat_completion_future = ChatCompletion::builder(&self.openai_model, messages)
             .create();
         
-        info!("[{}] ⏰ Waiting for OpenAI API response (timeout: 45s)", request_id);
+        info!("[{request_id}] ⏰ Waiting for OpenAI API response (timeout: 45s)");
         let chat_completion = timeout(TokioDuration::from_secs(45), chat_completion_future)
             .await
             .map_err(|_| {
                 let elapsed = start_time.elapsed();
-                error!("[{}] ⏱️ OpenAI API request timed out after {:?}", request_id, elapsed);
+                error!("[{request_id}] ⏱️ OpenAI API request timed out after {elapsed:?}");
                 anyhow::anyhow!("OpenAI API request timed out after 45 seconds")
             })?
             .map_err(|e| {
                 let elapsed = start_time.elapsed();
-                error!("[{}] ❌ OpenAI API error after {:?}: {}", request_id, elapsed, e);
+                error!("[{request_id}] ❌ OpenAI API error after {elapsed:?}: {e}");
                 anyhow::anyhow!("OpenAI API error: {}", e)
             })?;
 
         let elapsed = start_time.elapsed();
-        info!("[{}] ✅ OpenAI API response received after {:?}", request_id, elapsed);
+        info!("[{request_id}] ✅ OpenAI API response received after {elapsed:?}");
 
-        debug!("[{}] 🔍 Parsing OpenAI API response", request_id);
+        debug!("[{request_id}] 🔍 Parsing OpenAI API response");
         debug!("[{}] 📊 Response choices count: {}", request_id, chat_completion.choices.len());
         
         let response = chat_completion
@@ -1460,7 +1459,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .first()
             .and_then(|choice| choice.message.content.as_ref())
             .ok_or_else(|| {
-                error!("[{}] ❌ No content in OpenAI response", request_id);
+                error!("[{request_id}] ❌ No content in OpenAI response");
                 anyhow::anyhow!("No response from OpenAI")
             })?;
 
@@ -1494,7 +1493,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                                 .say(&ctx.http, "I couldn't hear anything in that audio file.")
                                 .await?;
                         } else {
-                            let response = format!("📝 **Transcription:**\n{}", transcription);
+                            let response = format!("📝 **Transcription:**\n{transcription}");
                             
                             if response.len() > 2000 {
                                 let chunks: Vec<&str> = response.as_bytes()
@@ -1521,7 +1520,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                                         msg.channel_id.say(&ctx.http, &ai_response).await?;
                                     }
                                     Err(e) => {
-                                        error!("AI response error: {}", e);
+                                        error!("AI response error: {e}");
                                     }
                                 }
                             }
@@ -1530,7 +1529,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                         self.database.log_usage(&user_id, "audio_transcription", None).await?;
                     }
                     Err(e) => {
-                        error!("Transcription error: {}", e);
+                        error!("Transcription error: {e}");
                         msg.channel_id
                             .say(&ctx.http, "Sorry, I couldn't transcribe that audio file. Please make sure it's a valid audio format.")
                             .await?;
@@ -1586,7 +1585,7 @@ Use the buttons below for more help or to try custom prompts!"#;
 
         // Get recent messages, optionally filtering to only new messages since last mediation
         let recent_messages = if let Some(last_ts) = last_mediation_ts {
-            info!("🔍 Getting messages since last mediation at timestamp {}", last_ts);
+            info!("🔍 Getting messages since last mediation at timestamp {last_ts}");
             self.database.get_recent_channel_messages_since(channel_id, last_ts, 10).await?
         } else {
             info!("🔍 No previous mediation found, getting all recent messages");
@@ -1596,7 +1595,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         info!("🔍 Conflict check: Found {} recent messages in channel {} (after last mediation)",
               recent_messages.len(), channel_id);
 
-        if recent_messages.len() < 1 {
+        if recent_messages.is_empty() {
             info!("⏭️ Skipping conflict detection: No messages found");
             return Ok(());
         }
@@ -1608,19 +1607,17 @@ Use the buttons below for more help or to try custom prompts!"#;
         info!("👥 Messages from {} unique users", unique_users.len());
 
         for (i, (user_id, content, timestamp)) in recent_messages.iter().take(3).enumerate() {
-            debug!("  Message {}: User={} | Content='{}' | Time={}", i, user_id, content, timestamp);
+            debug!("  Message {i}: User={user_id} | Content='{content}' | Time={timestamp}");
         }
 
         // Detect conflicts in recent messages
         let (is_conflict, confidence, conflict_type) =
             self.conflict_detector.detect_heated_argument(&recent_messages, 120);
 
-        info!("📊 Detection result: conflict={} | confidence={:.2} | threshold={:.2} | type='{}' | cooldown={}min",
-               is_conflict, confidence, sensitivity_threshold, conflict_type, cooldown_minutes);
+        info!("📊 Detection result: conflict={is_conflict} | confidence={confidence:.2} | threshold={sensitivity_threshold:.2} | type='{conflict_type}' | cooldown={cooldown_minutes}min");
 
         if is_conflict && confidence >= sensitivity_threshold {
-            info!("🔥 Conflict detected in channel {} | Confidence: {:.2} | Type: {}",
-                  channel_id, confidence, conflict_type);
+            info!("🔥 Conflict detected in channel {channel_id} | Confidence: {confidence:.2} | Type: {conflict_type}");
 
             // Check cooldown using last mediation timestamp and guild-specific cooldown
             if let Some(last_ts) = last_mediation_ts {
@@ -1638,7 +1635,7 @@ Use the buttons below for more help or to try custom prompts!"#;
 
             // Also check the in-memory rate limiter
             if !self.conflict_mediator.can_intervene(channel_id) {
-                info!("⏸️ Mediation on cooldown for channel {} (in-memory limiter)", channel_id);
+                info!("⏸️ Mediation on cooldown for channel {channel_id} (in-memory limiter)");
                 return Ok(());
             }
 
@@ -1652,7 +1649,7 @@ Use the buttons below for more help or to try custom prompts!"#;
 
             info!("👥 Conflict participants: {} users", participants.len());
 
-            if participants.len() < 1 {
+            if participants.is_empty() {
                 info!("⏭️ Skipping mediation: No participants found");
                 return Ok(());
             }
@@ -1676,7 +1673,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                     response
                 },
                 Err(e) => {
-                    warn!("⚠️ Failed to generate AI mediation response: {}. Using fallback.", e);
+                    warn!("⚠️ Failed to generate AI mediation response: {e}. Using fallback.");
                     self.conflict_mediator.get_mediation_response(&conflict_type, confidence)
                 }
             };
@@ -1684,7 +1681,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             // Send mediation message as Obi-Wan with proper error handling
             match msg.channel_id.say(&ctx.http, &mediation_text).await {
                 Ok(mediation_msg) => {
-                    info!("☮️ Mediation sent successfully in channel {} | Message: {}", channel_id, mediation_text);
+                    info!("☮️ Mediation sent successfully in channel {channel_id} | Message: {mediation_text}");
 
                     // Record the intervention
                     self.conflict_mediator.record_intervention(channel_id);
@@ -1694,14 +1691,14 @@ Use the buttons below for more help or to try custom prompts!"#;
                     self.database.record_mediation(conflict_id, channel_id, &mediation_text).await?;
                 },
                 Err(e) => {
-                    warn!("⚠️ Failed to send mediation message to Discord: {}. Recording intervention to prevent spam.", e);
+                    warn!("⚠️ Failed to send mediation message to Discord: {e}. Recording intervention to prevent spam.");
 
                     // Still record the intervention to prevent repeated mediation attempts
                     self.conflict_mediator.record_intervention(channel_id);
 
                     // Try to record in database with no message ID
                     if let Err(db_err) = self.database.record_mediation(conflict_id, channel_id, &mediation_text).await {
-                        warn!("⚠️ Failed to record mediation in database: {}", db_err);
+                        warn!("⚠️ Failed to record mediation in database: {db_err}");
                     }
                 }
             }
@@ -1764,7 +1761,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .map(|id| id.to_string())
             .unwrap_or_else(|| command.channel_id.to_string());
 
-        info!("[{}] Setting verbosity for channel {} to {}", request_id, target_channel_id, level);
+        info!("[{request_id}] Setting verbosity for channel {target_channel_id} to {level}");
 
         // Set the verbosity
         self.database.set_channel_verbosity(&guild_id, &target_channel_id, &level).await?;
@@ -1774,9 +1771,8 @@ Use the buttons below for more help or to try custom prompts!"#;
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|message| {
-                        message.content(&format!(
-                            "✅ Verbosity for <#{}> set to **{}**",
-                            target_channel_id, level
+                        message.content(format!(
+                            "✅ Verbosity for <#{target_channel_id}> set to **{level}**"
                         ))
                     })
             })
@@ -1881,14 +1877,14 @@ Use the buttons below for more help or to try custom prompts!"#;
                     response
                         .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                         .interaction_response_data(|message| {
-                            message.content(&format!("❌ {}", error_msg))
+                            message.content(format!("❌ {error_msg}"))
                         })
                 })
                 .await?;
             return Ok(());
         }
 
-        info!("[{}] Setting guild {} setting '{}' to '{}'", request_id, guild_id, setting, value);
+        info!("[{request_id}] Setting guild {guild_id} setting '{setting}' to '{value}'");
 
         // Set the guild setting
         self.database.set_guild_setting(&guild_id, &setting, &value).await?;
@@ -1898,9 +1894,8 @@ Use the buttons below for more help or to try custom prompts!"#;
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|message| {
-                        message.content(&format!(
-                            "✅ Guild setting `{}` set to **{}**",
-                            setting, value
+                        message.content(format!(
+                            "✅ Guild setting `{setting}` set to **{value}**"
                         ))
                     })
             })
@@ -1958,7 +1953,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         // Get bot admin role
         let admin_role = self.database.get_guild_setting(&guild_id, "bot_admin_role").await?;
         let admin_role_display = match admin_role {
-            Some(role_id) => format!("<@&{}>", role_id),
+            Some(role_id) => format!("<@&{role_id}>"),
             None => "Not set (Discord admins only)".to_string(),
         };
 
@@ -1991,7 +1986,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             admin_role_display
         );
 
-        info!("[{}] Displaying settings for guild {} channel {}", request_id, guild_id, channel_id);
+        info!("[{request_id}] Displaying settings for guild {guild_id} channel {channel_id}");
 
         command
             .create_interaction_response(&ctx.http, |response| {
@@ -2032,7 +2027,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         let role_id = get_role_option(&command.data.options, "role")
             .ok_or_else(|| anyhow::anyhow!("Missing role parameter"))?;
 
-        info!("[{}] Setting bot admin role for guild {} to {}", request_id, guild_id, role_id);
+        info!("[{request_id}] Setting bot admin role for guild {guild_id} to {role_id}");
 
         // Set the bot admin role
         self.database.set_guild_setting(&guild_id, "bot_admin_role", &role_id.to_string()).await?;
@@ -2042,9 +2037,8 @@ Use the buttons below for more help or to try custom prompts!"#;
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|message| {
-                        message.content(&format!(
-                            "✅ Bot Admin role set to <@&{}>. Users with this role can now manage bot settings.",
-                            role_id
+                        message.content(format!(
+                            "✅ Bot Admin role set to <@&{role_id}>. Users with this role can now manage bot settings."
                         ))
                     })
             })
@@ -2184,9 +2178,8 @@ Use the buttons below for more help or to try custom prompts!"#;
                 response
                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                     .interaction_response_data(|msg| {
-                        msg.content(&format!(
-                            "⏰ Got it! I'll remind you in **{}** about:\n> {}\n\n*Reminder ID: #{}*",
-                            duration_display, message, reminder_id
+                        msg.content(format!(
+                            "⏰ Got it! I'll remind you in **{duration_display}** about:\n> {message}\n\n*Reminder ID: #{reminder_id}*"
                         ))
                     })
             })
@@ -2237,13 +2230,13 @@ Use the buttons below for more help or to try custom prompts!"#;
                     let deleted = self.database.delete_reminder(id, &user_id).await?;
 
                     if deleted {
-                        info!("[{}] 🗑️ Deleted reminder {} for user {}", request_id, id, user_id);
+                        info!("[{request_id}] 🗑️ Deleted reminder {id} for user {user_id}");
                         command
                             .create_interaction_response(&ctx.http, |response| {
                                 response
                                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                                     .interaction_response_data(|msg| {
-                                        msg.content(&format!("✅ Cancelled reminder #{}.", id))
+                                        msg.content(format!("✅ Cancelled reminder #{id}."))
                                     })
                             })
                             .await?;
@@ -2253,7 +2246,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                                 response
                                     .kind(serenity::model::application::interaction::InteractionResponseType::ChannelMessageWithSource)
                                     .interaction_response_data(|msg| {
-                                        msg.content(&format!("❌ Reminder #{} not found or doesn't belong to you.", id))
+                                        msg.content(format!("❌ Reminder #{id} not found or doesn't belong to you."))
                                     })
                             })
                             .await?;
@@ -2305,7 +2298,7 @@ Use the buttons below for more help or to try custom prompts!"#;
                             remind_at.clone()
                         };
 
-                        reminder_list.push_str(&format!("**#{}** - {} ({})\n> {}\n\n", id, time_display, remind_at, text));
+                        reminder_list.push_str(&format!("**#{id}** - {time_display} ({remind_at})\n> {text}\n\n"));
                     }
 
                     reminder_list.push_str("*Use `/reminders cancel <id>` to cancel a reminder.*");
@@ -2340,7 +2333,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         let component = get_string_option(&command.data.options, "component")
             .ok_or_else(|| anyhow::anyhow!("Missing component parameter"))?;
 
-        info!("[{}] 🔍 Introspect requested for component: {} by user: {}", request_id, component, user_id);
+        info!("[{request_id}] 🔍 Introspect requested for component: {component} by user: {user_id}");
 
         // Defer response - AI generation takes time
         command
@@ -2361,19 +2354,16 @@ Use the buttons below for more help or to try custom prompts!"#;
 
         // Build the introspection prompt
         let introspection_prompt = format!(
-            "{}\n\n\
+            "{persona_prompt}\n\n\
             You are now being asked to explain your own implementation. \
             The user wants to understand how you work internally.\n\n\
-            Here is actual code from your implementation - {}:\n\n\
-            ```rust\n{}\n```\n\n\
+            Here is actual code from your implementation - {component_title}:\n\n\
+            ```rust\n{code_snippet}\n```\n\n\
             Explain this code in your characteristic style and personality. \
             Use metaphors and analogies that fit your character. \
             Make it entertaining and educational. \
             Keep it conversational, not too technical. \
-            Aim for 2-3 paragraphs.",
-            persona_prompt,
-            component_title,
-            code_snippet
+            Aim for 2-3 paragraphs."
         );
 
         // Call OpenAI
@@ -2388,7 +2378,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             },
             ChatCompletionMessage {
                 role: ChatCompletionMessageRole::User,
-                content: Some(format!("Explain how your {} system works, in your own words.", component_title)),
+                content: Some(format!("Explain how your {component_title} system works, in your own words.")),
                 name: None,
                 function_call: None,
                 tool_call_id: None,
@@ -2407,21 +2397,21 @@ Use the buttons below for more help or to try custom prompts!"#;
                     .unwrap_or_else(|| "I seem to be having trouble reflecting on myself right now.".to_string())
             }
             Err(e) => {
-                warn!("[{}] ⚠️ OpenAI error during introspection: {}", request_id, e);
-                format!("I encountered an error while attempting to explain my {} system: {}", component, e)
+                warn!("[{request_id}] ⚠️ OpenAI error during introspection: {e}");
+                format!("I encountered an error while attempting to explain my {component} system: {e}")
             }
         };
 
         // Edit the deferred response
         command
             .edit_original_interaction_response(&ctx.http, |msg| {
-                msg.content(&format!("## 🔍 Introspection: {}\n\n{}", component_title, response))
+                msg.content(format!("## 🔍 Introspection: {component_title}\n\n{response}"))
             })
             .await?;
 
         self.database.log_usage(&user_id, "introspect", Some(&persona_name)).await?;
 
-        info!("[{}] ✅ Introspection complete for component: {}", request_id, component);
+        info!("[{request_id}] ✅ Introspection complete for component: {component}");
         Ok(())
     }
 
@@ -2458,7 +2448,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .await?;
 
         self.database.log_usage(&user_id, "status", None).await?;
-        info!("[{}] ✅ Status command completed", request_id);
+        info!("[{request_id}] ✅ Status command completed");
         Ok(())
     }
 
@@ -2486,7 +2476,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .await?;
 
         self.database.log_usage(&user_id, "version", None).await?;
-        info!("[{}] ✅ Version command completed", request_id);
+        info!("[{request_id}] ✅ Version command completed");
         Ok(())
     }
 
@@ -2506,13 +2496,13 @@ Use the buttons below for more help or to try custom prompts!"#;
         let seconds = uptime.as_secs() % 60;
 
         let response = if days > 0 {
-            format!("⏱️ Uptime: {}d {}h {}m {}s", days, hours, minutes, seconds)
+            format!("⏱️ Uptime: {days}d {hours}h {minutes}m {seconds}s")
         } else if hours > 0 {
-            format!("⏱️ Uptime: {}h {}m {}s", hours, minutes, seconds)
+            format!("⏱️ Uptime: {hours}h {minutes}m {seconds}s")
         } else if minutes > 0 {
-            format!("⏱️ Uptime: {}m {}s", minutes, seconds)
+            format!("⏱️ Uptime: {minutes}m {seconds}s")
         } else {
-            format!("⏱️ Uptime: {}s", seconds)
+            format!("⏱️ Uptime: {seconds}s")
         };
 
         command
@@ -2523,7 +2513,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .await?;
 
         self.database.log_usage(&user_id, "uptime", None).await?;
-        info!("[{}] ✅ Uptime command completed", request_id);
+        info!("[{request_id}] ✅ Uptime command completed");
         Ok(())
     }
 
@@ -2572,7 +2562,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .await?;
 
         self.database.log_usage(&user_id, "features", None).await?;
-        info!("[{}] ✅ Features command completed", request_id);
+        info!("[{request_id}] ✅ Features command completed");
         Ok(())
     }
 
@@ -2636,7 +2626,7 @@ Use the buttons below for more help or to try custom prompts!"#;
             .await?;
 
         self.database.log_usage(&user_id, "toggle", None).await?;
-        info!("[{}] ✅ Toggle command completed: {} -> {}", request_id, feature_id, new_enabled);
+        info!("[{request_id}] ✅ Toggle command completed: {feature_id} -> {new_enabled}");
         Ok(())
     }
 
@@ -2650,7 +2640,7 @@ Use the buttons below for more help or to try custom prompts!"#;
         // Build conversation context from recent messages
         let mut conversation_context = String::new();
         for (user_id, content, _timestamp) in messages.iter().rev().take(5) {
-            conversation_context.push_str(&format!("User {}: {}\n", user_id, content));
+            conversation_context.push_str(&format!("User {user_id}: {content}\n"));
         }
 
         // Create system prompt for Obi-Wan as mediator

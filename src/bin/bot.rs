@@ -41,13 +41,13 @@ impl EventHandler for Handler {
         }
 
         if let Err(e) = self.command_handler.handle_message(&ctx, &msg).await {
-            error!("Error handling message: {}", e);
+            error!("Error handling message: {e}");
             if let Err(why) = msg
                 .channel_id
                 .say(&ctx.http, "Sorry, I encountered an error processing your message.")
                 .await
             {
-                error!("Failed to send error message: {}", why);
+                error!("Failed to send error message: {why}");
             }
         }
     }
@@ -66,16 +66,16 @@ impl EventHandler for Handler {
 
         // Register slash commands - use guild commands for development (instant), global for production
         if let Some(guild_id) = self.guild_id {
-            info!("🔧 Development mode: Registering commands for guild {}", guild_id);
+            info!("🔧 Development mode: Registering commands for guild {guild_id}");
             if let Err(e) = register_guild_commands(&ctx, guild_id).await {
-                error!("❌ Failed to register guild slash commands: {}", e);
+                error!("❌ Failed to register guild slash commands: {e}");
             } else {
-                info!("✅ Successfully registered slash commands for guild {} (instant update)", guild_id);
+                info!("✅ Successfully registered slash commands for guild {guild_id} (instant update)");
             }
         } else {
             info!("🌍 Production mode: Registering commands globally");
             if let Err(e) = register_global_commands(&ctx).await {
-                error!("❌ Failed to register global slash commands: {}", e);
+                error!("❌ Failed to register global slash commands: {e}");
             } else {
                 info!("✅ Successfully registered slash commands globally (may take up to 1 hour to propagate)");
             }
@@ -98,6 +98,7 @@ impl EventHandler for Handler {
                     };
                     
                     // Try to edit the deferred response, fallback to new response if that fails
+                    #[allow(clippy::redundant_pattern_matching)]
                     if let Err(_) = command.edit_original_interaction_response(&ctx.http, |response| {
                         response.content(error_message)
                     }).await {
@@ -118,6 +119,7 @@ impl EventHandler for Handler {
                     let error_message = "❌ Sorry, I encountered an error processing your interaction. Please try again.";
                     
                     // Try to update the message, fallback to new response if that fails
+                    #[allow(clippy::redundant_pattern_matching)]
                     if let Err(_) = component.create_interaction_response(&ctx.http, |response| {
                         response
                             .kind(serenity::model::application::interaction::InteractionResponseType::UpdateMessage)
@@ -146,6 +148,7 @@ impl EventHandler for Handler {
                     };
                     
                     // Try to edit the deferred response, fallback to new response if that fails
+                    #[allow(clippy::redundant_pattern_matching)]
                     if let Err(_) = modal.edit_original_interaction_response(&ctx.http, |response| {
                         response.content(error_message)
                     }).await {
@@ -296,7 +299,7 @@ async fn main() -> Result<()> {
         .event_handler(handler)
         .await
         .map_err(|e| {
-            error!("Failed to create Discord client: {}", e);
+            error!("Failed to create Discord client: {e}");
             error!("This could indicate:");
             error!("  - Invalid bot token format");
             error!("  - Network issues reaching Discord API");
@@ -315,10 +318,10 @@ async fn main() -> Result<()> {
 
     // Log gateway connection attempt
     info!("Establishing WebSocket connection to Discord gateway...");
-    info!("Gateway intents: {:?}", intents);
+    info!("Gateway intents: {intents:?}");
 
     if let Err(why) = client.start().await {
-        error!("Gateway connection failed: {:?}", why);
+        error!("Gateway connection failed: {why:?}");
         error!("This could be due to:");
         error!("  - Invalid bot token");
         error!("  - Network connectivity issues");

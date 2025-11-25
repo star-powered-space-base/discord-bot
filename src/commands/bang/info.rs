@@ -47,12 +47,12 @@ pub fn uptime(start_time: std::time::Instant) -> String {
     let seconds = uptime.as_secs() % 60;
 
     if days > 0 {
-        format!("⏱️ Uptime: {}d {}h {}m {}s", days, hours, minutes, seconds)
+        format!("⏱️ Uptime: {days}d {hours}h {minutes}m {seconds}s")
     } else if hours > 0 {
-        format!("⏱️ Uptime: {}h {}m {}s", hours, minutes, seconds)
+        format!("⏱️ Uptime: {hours}h {minutes}m {seconds}s")
     } else if minutes > 0 {
-        format!("⏱️ Uptime: {}m {}s", minutes, seconds)
+        format!("⏱️ Uptime: {minutes}m {seconds}s")
     } else {
-        format!("⏱️ Uptime: {}s", seconds)
+        format!("⏱️ Uptime: {seconds}s")
     }
 }

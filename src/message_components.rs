@@ -32,7 +32,7 @@ impl MessageComponentHandler {
         let custom_id = &interaction.data.custom_id;
         let user_id = interaction.user.id.to_string();
         
-        info!("Processing component interaction: {} from user: {}", custom_id, user_id);
+        info!("Processing component interaction: {custom_id} from user: {user_id}");
 
         match custom_id.as_str() {
             "persona_muppet" | "persona_chef" | "persona_obi" | "persona_teacher" | "persona_analyst" => {
@@ -74,7 +74,7 @@ impl MessageComponentHandler {
         let custom_id = &interaction.data.custom_id;
         let user_id = interaction.user.id.to_string();
         
-        info!("Processing modal submit: {} from user: {}", custom_id, user_id);
+        info!("Processing modal submit: {custom_id} from user: {user_id}");
 
         match custom_id.as_str() {
             "help_feedback_modal" => {
@@ -166,13 +166,13 @@ impl MessageComponentHandler {
             .create_action_row(|row| {
                 row.create_button(|button| {
                     button
-                        .custom_id(&format!("confirm_{}", action_id))
+                        .custom_id(format!("confirm_{action_id}"))
                         .label("✅ Confirm")
                         .style(ButtonStyle::Success)
                 })
                 .create_button(|button| {
                     button
-                        .custom_id(&format!("cancel_{}", action_id))
+                        .custom_id(format!("cancel_{action_id}"))
                         .label("❌ Cancel")
                         .style(ButtonStyle::Danger)
                 })
@@ -201,7 +201,7 @@ impl MessageComponentHandler {
                 .create_button(|button| {
                     button
                         .custom_id("page_info")
-                        .label(&format!("{}/{}", current_page, total_pages))
+                        .label(format!("{current_page}/{total_pages}"))
                         .style(ButtonStyle::Secondary)
                         .disabled(true)
                 })
@@ -245,7 +245,7 @@ impl MessageComponentHandler {
                         .kind(InteractionResponseType::UpdateMessage)
                         .interaction_response_data(|message| {
                             message
-                                .content(&format!("✅ Your persona has been set to: **{}**", persona_name))
+                                .content(format!("✅ Your persona has been set to: **{persona_name}**"))
                                 .components(|c| c) // Clear components
                         })
                 })
@@ -275,7 +275,7 @@ impl MessageComponentHandler {
                     .kind(InteractionResponseType::UpdateMessage)
                     .interaction_response_data(|message| {
                         message
-                            .content(&format!("✅ Action confirmed: {}", action_id))
+                            .content(format!("✅ Action confirmed: {action_id}"))
                             .components(|c| c) // Clear components
                     })
             })
@@ -428,7 +428,7 @@ impl MessageComponentHandler {
         let combined_message = if help_details.is_empty() {
             help_topic
         } else {
-            format!("{}\n\nAdditional context: {}", help_topic, help_details)
+            format!("{help_topic}\n\nAdditional context: {help_details}")
         };
 
         // Immediately defer the interaction to prevent timeout
@@ -443,12 +443,12 @@ impl MessageComponentHandler {
             Ok(ai_response) => {
                 interaction
                     .edit_original_interaction_response(&ctx.http, |response| {
-                        response.content(&format!("❓ **Help Response:**\n{}", ai_response))
+                        response.content(format!("❓ **Help Response:**\n{ai_response}"))
                     })
                     .await?;
             }
             Err(e) => {
-                error!("AI response error in help modal: {}", e);
+                error!("AI response error in help modal: {e}");
                 interaction
                     .edit_original_interaction_response(&ctx.http, |response| {
                         response.content("❌ Sorry, I encountered an error processing your help request.")
@@ -490,12 +490,12 @@ impl MessageComponentHandler {
             Ok(ai_response) => {
                 interaction
                     .edit_original_interaction_response(&ctx.http, |response| {
-                        response.content(&format!("✨ **Custom Prompt Response:**\n{}", ai_response))
+                        response.content(format!("✨ **Custom Prompt Response:**\n{ai_response}"))
                     })
                     .await?;
             }
             Err(e) => {
-                error!("AI response error in custom prompt: {}", e);
+                error!("AI response error in custom prompt: {e}");
                 interaction
                     .edit_original_interaction_response(&ctx.http, |response| {
                         response.content("❌ Sorry, I encountered an error processing your custom prompt.")

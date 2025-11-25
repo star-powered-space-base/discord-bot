@@ -32,7 +32,7 @@ impl RateLimiter {
 
     pub async fn check_rate_limit(&self, user_id: &str) -> bool {
         let now = Instant::now();
-        let mut entry = self.requests.entry(user_id.to_string()).or_insert_with(Vec::new);
+        let mut entry = self.requests.entry(user_id.to_string()).or_default();
         
         entry.retain(|&time| now.duration_since(time) < self.time_window);
         

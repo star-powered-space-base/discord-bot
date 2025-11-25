@@ -17,7 +17,7 @@ impl Database {
         };
         
         db.init_tables().await?;
-        info!("Database initialized at: {}", database_path);
+        info!("Database initialized at: {database_path}");
         Ok(db)
     }
 
@@ -432,7 +432,7 @@ impl Database {
         statement.bind((2, persona))?;
         statement.next()?;
         
-        info!("Updated persona for user {} to {}", user_id, persona);
+        info!("Updated persona for user {user_id} to {persona}");
         Ok(())
     }
 
@@ -494,7 +494,7 @@ impl Database {
         statement.bind((1, user_id))?;
         statement.bind((2, channel_id))?;
         statement.next()?;
-        info!("Cleared conversation history for user {} in channel {}", user_id, channel_id);
+        info!("Cleared conversation history for user {user_id} in channel {channel_id}");
         Ok(())
     }
 
@@ -503,9 +503,9 @@ impl Database {
         let mut statement = conn.prepare(
             "DELETE FROM conversation_history WHERE timestamp < datetime('now', ? || ' days')"
         )?;
-        statement.bind((1, format!("-{}", days).as_str()))?;
+        statement.bind((1, format!("-{days}").as_str()))?;
         statement.next()?;
-        info!("Cleaned up conversation history older than {} days", days);
+        info!("Cleaned up conversation history older than {days} days");
         Ok(())
     }
 
@@ -624,7 +624,7 @@ impl Database {
         statement.bind((4, bookmark_name.unwrap_or("")))?;
         statement.bind((5, bookmark_note.unwrap_or("")))?;
         statement.next()?;
-        info!("Added bookmark for user {}", user_id);
+        info!("Added bookmark for user {user_id}");
         Ok(())
     }
 
@@ -681,7 +681,7 @@ impl Database {
         let mut stmt = conn.prepare("SELECT last_insert_rowid()")?;
         stmt.next()?;
         let reminder_id = stmt.read::<i64, _>(0)?;
-        info!("Added reminder {} for user {}", reminder_id, user_id);
+        info!("Added reminder {reminder_id} for user {user_id}");
         Ok(reminder_id)
     }
 
@@ -751,7 +751,7 @@ impl Database {
         let changes = check.read::<i64, _>(0)?;
 
         if changes > 0 {
-            info!("Deleted reminder {} for user {}", reminder_id, user_id);
+            info!("Deleted reminder {reminder_id} for user {user_id}");
             Ok(true)
         } else {
             Ok(false)
@@ -778,7 +778,7 @@ impl Database {
         statement.bind((4, guild_id.unwrap_or("")))?;
         statement.bind((5, if is_global { 1i64 } else { 0i64 }))?;
         statement.next()?;
-        info!("Added custom command: {}", command_name);
+        info!("Added custom command: {command_name}");
         Ok(())
     }
 
@@ -860,6 +860,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_error(
         &self,
         error_type: &str,
@@ -971,7 +972,7 @@ impl Database {
         statement.bind((4, toggled_by))?;
         statement.bind((5, if enabled { 1i64 } else { 0i64 }))?;
         statement.next()?;
-        info!("Recorded feature toggle: {} -> {} by {}", feature_name, enabled, toggled_by);
+        info!("Recorded feature toggle: {feature_name} -> {enabled} by {toggled_by}");
         Ok(())
     }
 
@@ -1063,7 +1064,7 @@ impl Database {
         id_statement.next()?;
         let conflict_id = id_statement.read::<i64, _>(0)?;
 
-        info!("Recorded conflict detection in channel {} with confidence {}", channel_id, confidence);
+        info!("Recorded conflict detection in channel {channel_id} with confidence {confidence}");
         Ok(conflict_id)
     }
 
@@ -1074,7 +1075,7 @@ impl Database {
         )?;
         statement.bind((1, conflict_id))?;
         statement.next()?;
-        info!("Marked conflict {} as resolved", conflict_id);
+        info!("Marked conflict {conflict_id} as resolved");
         Ok(())
     }
 
@@ -1122,7 +1123,7 @@ impl Database {
         statement.bind((2, channel_id))?;
         statement.bind((3, message_text))?;
         statement.next()?;
-        info!("Recorded mediation for conflict {}", conflict_id);
+        info!("Recorded mediation for conflict {conflict_id}");
         Ok(())
     }
 
@@ -1291,7 +1292,7 @@ impl Database {
         statement.bind((2, channel_id))?;
         statement.bind((3, verbosity))?;
         statement.next()?;
-        info!("Set verbosity for channel {} to {}", channel_id, verbosity);
+        info!("Set verbosity for channel {channel_id} to {verbosity}");
         Ok(())
     }
 
@@ -1328,7 +1329,7 @@ impl Database {
         statement.bind((2, channel_id))?;
         statement.bind((3, if enabled { 1i64 } else { 0i64 }))?;
         statement.next()?;
-        info!("Set conflict_enabled for channel {} to {}", channel_id, enabled);
+        info!("Set conflict_enabled for channel {channel_id} to {enabled}");
         Ok(())
     }
 

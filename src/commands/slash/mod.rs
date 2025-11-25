@@ -97,8 +97,7 @@ pub async fn register_guild_commands(ctx: &Context, guild_id: GuildId) -> Result
         .await?;
 
     info!(
-        "Guild slash commands and context menu commands registered successfully for guild: {}",
-        guild_id
+        "Guild slash commands and context menu commands registered successfully for guild: {guild_id}"
     );
     Ok(())
 }

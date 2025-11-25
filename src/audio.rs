@@ -26,13 +26,13 @@ impl AudioTranscriber {
     }
 
     pub async fn transcribe_file(&self, file_path: &str) -> Result<String> {
-        info!("Transcribing audio file: {}", file_path);
+        info!("Transcribing audio file: {file_path}");
 
         if !self.is_audio_file(file_path) {
             return Err(anyhow::anyhow!("File is not a supported audio format"));
         }
 
-        if !fs::metadata(file_path).await.is_ok() {
+        if fs::metadata(file_path).await.is_err() {
             return Err(anyhow::anyhow!("Audio file not found: {}", file_path));
         }
 
@@ -41,7 +41,7 @@ impl AudioTranscriber {
                 "https://api.openai.com/v1/audio/transcriptions",
                 "-H", &format!("Authorization: Bearer {}", self.openai_api_key),
                 "-H", "Content-Type: multipart/form-data",
-                "-F", &format!("file=@{}", file_path),
+                "-F", &format!("file=@{file_path}"),
                 "-F", "model=whisper-1",
             ])
             .output()?;
@@ -54,15 +54,15 @@ impl AudioTranscriber {
                 info!("Transcription successful, length: {} characters", text.len());
                 Ok(text.to_string())
             } else if let Some(error) = json.get("error") {
-                error!("OpenAI API error: {}", error);
+                error!("OpenAI API error: {error}");
                 Err(anyhow::anyhow!("OpenAI API error: {}", error))
             } else {
-                error!("Unexpected response format: {}", response);
+                error!("Unexpected response format: {response}");
                 Err(anyhow::anyhow!("Unexpected response format"))
             }
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            error!("Transcription failed: {}", error_msg);
+            error!("Transcription failed: {error_msg}");
             Err(anyhow::anyhow!("Transcription failed: {}", error_msg))
         }
     }
@@ -77,9 +77,9 @@ impl AudioTranscriber {
     }
 
     pub async fn download_and_transcribe_attachment(&self, url: &str, filename: &str) -> Result<String> {
-        let temp_file = format!("/tmp/discord_audio_{}", filename);
+        let temp_file = format!("/tmp/discord_audio_{filename}");
         
-        info!("Downloading audio attachment: {}", filename);
+        info!("Downloading audio attachment: {filename}");
         
         let output = Command::new("curl")
             .args(["-o", &temp_file, url])
@@ -92,7 +92,7 @@ impl AudioTranscriber {
         let transcription = self.transcribe_file(&temp_file).await;
         
         if let Err(e) = fs::remove_file(&temp_file).await {
-            error!("Failed to cleanup temp file {}: {}", temp_file, e);
+            error!("Failed to cleanup temp file {temp_file}: {e}");
         }
 
         transcription

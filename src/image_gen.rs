@@ -36,7 +36,7 @@ impl ImageSize {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "square" | "1024x1024" => Some(ImageSize::Square),
             "landscape" | "wide" | "1792x1024" => Some(ImageSize::Landscape),
@@ -60,7 +60,7 @@ impl ImageStyle {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "vivid" => Some(ImageStyle::Vivid),
             "natural" => Some(ImageStyle::Natural),
@@ -162,7 +162,7 @@ impl ImageGenerator {
                 }
             }
 
-            error!("No image data in response: {}", response_text);
+            error!("No image data in response: {response_text}");
             Err(anyhow::anyhow!("No image data in DALL-E response"))
         } else {
             // Try to parse error response
@@ -172,7 +172,7 @@ impl ImageGenerator {
                        error_response.error.error_type);
                 Err(anyhow::anyhow!("DALL-E error: {}", error_response.error.message))
             } else {
-                error!("DALL-E API error (status {}): {}", status, response_text);
+                error!("DALL-E API error (status {status}): {response_text}");
                 Err(anyhow::anyhow!("DALL-E API error (status {})", status))
             }
         }

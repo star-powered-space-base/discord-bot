@@ -71,13 +71,13 @@ pub async fn create_server(config: &Config, command_handler: CommandHandler) -> 
     let discord_public_key = config.discord_public_key.as_ref()
         .ok_or_else(|| anyhow!("DISCORD_PUBLIC_KEY environment variable is required for HTTP interactions"))?;
     
-    debug!("📋 Discord public key from config: {}", discord_public_key);
+    debug!("📋 Discord public key from config: {discord_public_key}");
     debug!("📏 Public key length: {} characters", discord_public_key.len());
     
     info!("🔓 Decoding public key from hex");
     let public_key_bytes = hex::decode(discord_public_key)
         .map_err(|e| {
-            error!("❌ Failed to decode Discord public key as hex: {}", e);
+            error!("❌ Failed to decode Discord public key as hex: {e}");
             anyhow!("Failed to decode Discord public key: {}", e)
         })?;
     
@@ -87,11 +87,11 @@ pub async fn create_server(config: &Config, command_handler: CommandHandler) -> 
     info!("🔐 Creating VerifyingKey from decoded bytes");
     let public_key = VerifyingKey::from_bytes(&public_key_bytes.try_into()
         .map_err(|_| {
-            error!("❌ Public key must be exactly 32 bytes, got {}", public_key_len);
+            error!("❌ Public key must be exactly 32 bytes, got {public_key_len}");
             anyhow!("Public key must be 32 bytes")
         })?)
         .map_err(|e| {
-            error!("❌ Invalid Discord public key format: {}", e);
+            error!("❌ Invalid Discord public key format: {e}");
             anyhow!("Invalid Discord public key: {}", e)
         })?;
     
@@ -138,18 +138,18 @@ async fn handle_interaction(
            });
     
     // Verify Discord signature
-    info!("[{}] 🔐 Starting Discord signature verification", request_id);
+    info!("[{request_id}] 🔐 Starting Discord signature verification");
     if let Err(e) = verify_discord_signature(&state.public_key, &headers, &body, request_id) {
-        error!("[{}] ❌ Signature verification failed: {}", request_id, e);
-        error!("[{}] 🚫 Returning 401 Unauthorized to Discord", request_id);
+        error!("[{request_id}] ❌ Signature verification failed: {e}");
+        error!("[{request_id}] 🚫 Returning 401 Unauthorized to Discord");
         return Err(StatusCode::UNAUTHORIZED);
     }
-    info!("[{}] ✅ Discord signature verification passed", request_id);
+    info!("[{request_id}] ✅ Discord signature verification passed");
 
     // Parse interaction payload
     let interaction: InteractionPayload = serde_json::from_slice(&body)
         .map_err(|e| {
-            error!("Failed to parse interaction payload: {}", e);
+            error!("Failed to parse interaction payload: {e}");
             StatusCode::BAD_REQUEST
         })?;
 
@@ -192,13 +192,13 @@ fn verify_discord_signature(
     body: &[u8],
     request_id: uuid::Uuid,
 ) -> Result<()> {
-    debug!("[{}] 🔍 Looking for signature headers", request_id);
+    debug!("[{request_id}] 🔍 Looking for signature headers");
     
     let signature_header = headers
         .get("x-signature-ed25519")
         .and_then(|h| h.to_str().ok())
         .ok_or_else(|| {
-            error!("[{}] ❌ Missing x-signature-ed25519 header", request_id);
+            error!("[{request_id}] ❌ Missing x-signature-ed25519 header");
             anyhow!("Missing signature header")
         })?;
 
@@ -206,17 +206,16 @@ fn verify_discord_signature(
         .get("x-signature-timestamp")
         .and_then(|h| h.to_str().ok())
         .ok_or_else(|| {
-            error!("[{}] ❌ Missing x-signature-timestamp header", request_id);
+            error!("[{request_id}] ❌ Missing x-signature-timestamp header");
             anyhow!("Missing timestamp header")
         })?;
 
-    debug!("[{}] 📋 Found headers | Signature: {} | Timestamp: {}", 
-           request_id, signature_header, timestamp_header);
+    debug!("[{request_id}] 📋 Found headers | Signature: {signature_header} | Timestamp: {timestamp_header}");
 
-    debug!("[{}] 🔓 Decoding signature from hex", request_id);
+    debug!("[{request_id}] 🔓 Decoding signature from hex");
     let signature_bytes = hex::decode(signature_header)
         .map_err(|e| {
-            error!("[{}] ❌ Invalid signature hex format: {}", request_id, e);
+            error!("[{request_id}] ❌ Invalid signature hex format: {e}");
             anyhow!("Invalid signature format: {}", e)
         })?;
 
@@ -224,7 +223,7 @@ fn verify_discord_signature(
     let signature_bytes_len = signature_bytes.len();
     let signature_array: [u8; 64] = signature_bytes.try_into()
         .map_err(|_| {
-            error!("[{}] ❌ Signature must be exactly 64 bytes, got {}", request_id, signature_bytes_len);
+            error!("[{request_id}] ❌ Signature must be exactly 64 bytes, got {signature_bytes_len}");
             anyhow!("Signature must be 64 bytes")
         })?;
     let signature = Signature::from_bytes(&signature_array);
@@ -235,19 +234,19 @@ fn verify_discord_signature(
     debug!("[{}] 📝 First 100 bytes of verification message: '{}'",
            request_id, String::from_utf8_lossy(&message[..message.len().min(100)]));
 
-    debug!("[{}] 🔐 Performing ed25519 signature verification", request_id);
+    debug!("[{request_id}] 🔐 Performing ed25519 signature verification");
     public_key
         .verify(&message, &signature)
         .map_err(|e| {
-            error!("[{}] ❌ ed25519 signature verification failed: {}", request_id, e);
-            error!("[{}] 🔑 Public key being used: {:?}", request_id, public_key);
+            error!("[{request_id}] ❌ ed25519 signature verification failed: {e}");
+            error!("[{request_id}] 🔑 Public key being used: {public_key:?}");
             error!("[{}] 📝 Message being verified: '{}'", request_id,
                    String::from_utf8_lossy(if message.len() > 200 { &message[..200] } else { &message }));
             error!("[{}] ✍️ Signature: {}", request_id, hex::encode(signature_array));
             anyhow!("Signature verification failed: {}", e)
         })?;
 
-    debug!("[{}] ✅ ed25519 signature verification successful", request_id);
+    debug!("[{request_id}] ✅ ed25519 signature verification successful");
     Ok(())
 }
 
@@ -280,7 +279,7 @@ async fn handle_application_command(
         }
         _ => {
             // AI-powered commands - defer response
-            info!("Deferring response for AI command: {}", command_name);
+            info!("Deferring response for AI command: {command_name}");
             
             // TODO: Implement actual command processing with follow-up
             // For now, just defer and the bot will need to edit the response later
@@ -304,12 +303,12 @@ async fn handle_message_component(
         .and_then(|id| id.as_str())
         .unwrap_or("unknown");
 
-    info!("Handling message component: {}", custom_id);
+    info!("Handling message component: {custom_id}");
 
     let response_content = match custom_id {
         id if id.starts_with("persona_") => {
             let persona = id.strip_prefix("persona_").unwrap_or("muppet");
-            format!("🎭 Persona switched to: **{}**", persona)
+            format!("🎭 Persona switched to: **{persona}**")
         }
         "help_detailed" => "📚 **Detailed Help:**\n\nThis bot provides AI-powered conversations through different personas. Use slash commands to interact!".to_string(),
         _ => "Button clicked!".to_string(),
@@ -421,12 +420,12 @@ pub async fn start_http_server(
 ) -> Result<()> {
     let app = create_server(&config, command_handler).await?;
     
-    let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{}", port))
+    let listener = tokio::net::TcpListener::bind(&format!("0.0.0.0:{port}"))
         .await
         .map_err(|e| anyhow!("Failed to bind to port {}: {}", port, e))?;
 
-    info!("HTTP server starting on port {}", port);
-    info!("Interactions endpoint: http://0.0.0.0:{}/interactions", port);
+    info!("HTTP server starting on port {port}");
+    info!("Interactions endpoint: http://0.0.0.0:{port}/interactions");
     
     axum::serve(listener, app)
         .await

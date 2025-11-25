@@ -80,7 +80,7 @@ impl ConflictMediator {
         let now = Instant::now();
         let one_hour_ago = now - Duration::from_secs(3600);
 
-        let mut count_ref = self.hourly_counts.entry(channel_id.to_string()).or_insert_with(Vec::new);
+        let mut count_ref = self.hourly_counts.entry(channel_id.to_string()).or_default();
 
         // Clean up old entries
         count_ref.retain(|&time| time > one_hour_ago);
@@ -94,7 +94,7 @@ impl ConflictMediator {
         let now = Instant::now();
         self.channel_interventions.insert(channel_id.to_string(), now);
 
-        let mut count_ref = self.hourly_counts.entry(channel_id.to_string()).or_insert_with(Vec::new);
+        let mut count_ref = self.hourly_counts.entry(channel_id.to_string()).or_default();
         count_ref.push(now);
     }
 
@@ -150,7 +150,7 @@ impl ConflictMediator {
                     .unwrap_or(Duration::from_secs(0));
 
                 if elapsed < self.mediation_cooldown {
-                    ((self.mediation_cooldown - elapsed).as_secs() / 60) as u64
+                    (self.mediation_cooldown - elapsed).as_secs() / 60
                 } else {
                     0
                 }

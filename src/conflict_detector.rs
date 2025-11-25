@@ -85,7 +85,7 @@ impl ConflictDetector {
         messages: &[(String, String, String)], // (user_id, content, timestamp)
         time_window_seconds: i64,
     ) -> (bool, f32, String) {
-        if messages.len() < 1 {
+        if messages.is_empty() {
             return (false, 0.0, String::new());
         }
 
@@ -145,7 +145,7 @@ impl ConflictDetector {
         for msg in messages {
             user_messages
                 .entry(msg.0.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(msg);
         }
 

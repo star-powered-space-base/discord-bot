@@ -1,8 +1,6 @@
 use anyhow::Result;
 use dotenvy::dotenv;
-use env_logger;
 use log::{info, error};
-use tokio;
 
 use persona::config::Config;
 use persona::database::Database;
@@ -46,11 +44,11 @@ async fn main() -> Result<()> {
 
     // Start HTTP server on port 6666 (matches ngrok configuration)
     let port = 6666;
-    info!("🌐 Starting HTTP server on port {}", port);
+    info!("🌐 Starting HTTP server on port {port}");
     info!("📡 Interactions endpoint: https://0fbf2d802093.ngrok-free.app/interactions");
     
     if let Err(e) = start_http_server(config, command_handler, port).await {
-        error!("❌ HTTP server failed: {}", e);
+        error!("❌ HTTP server failed: {e}");
         return Err(e);
     }
 
