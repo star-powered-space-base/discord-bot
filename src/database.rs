@@ -1757,6 +1757,7 @@ impl Database {
     }
 
     /// Get usage statistics for an entire guild within a date range
+    /// Includes DM usage from users who have interacted in this guild
     /// Returns (service_type, request_count, tokens, audio_seconds, images, cost)
     pub async fn get_guild_usage_stats(
         &self,
@@ -1764,6 +1765,7 @@ impl Database {
         days: i64,
     ) -> Result<Vec<(String, i64, i64, f64, i64, f64)>> {
         let conn = self.connection.lock().await;
+        let days_str = format!("-{}", days);
         let mut statement = conn.prepare(
             "SELECT service_type,
                     SUM(request_count) as requests,
@@ -1772,11 +1774,15 @@ impl Database {
                     SUM(total_images) as images,
                     SUM(total_cost_usd) as cost
              FROM openai_usage_daily
-             WHERE guild_id = ? AND date >= date('now', ? || ' days')
+             WHERE (guild_id = ? OR (guild_id = '' AND user_id IN (
+                 SELECT DISTINCT user_id FROM openai_usage_daily WHERE guild_id = ?
+             )))
+             AND date >= date('now', ? || ' days')
              GROUP BY service_type"
         )?;
         statement.bind((1, guild_id))?;
-        statement.bind((2, format!("-{}", days).as_str()))?;
+        statement.bind((2, guild_id))?;
+        statement.bind((3, days_str.as_str()))?;
 
         let mut results = Vec::new();
         while let Ok(State::Row) = statement.next() {
@@ -1792,6 +1798,7 @@ impl Database {
     }
 
     /// Get top users by cost for a guild
+    /// Includes DM usage from users who have interacted in this guild
     /// Returns (user_id, request_count, total_cost)
     pub async fn get_guild_top_users_by_cost(
         &self,
@@ -1800,19 +1807,25 @@ impl Database {
         limit: i64,
     ) -> Result<Vec<(String, i64, f64)>> {
         let conn = self.connection.lock().await;
+        let days_str = format!("-{}", days);
         let mut statement = conn.prepare(
             "SELECT user_id,
                     SUM(request_count) as requests,
                     SUM(total_cost_usd) as cost
              FROM openai_usage_daily
-             WHERE guild_id = ? AND user_id != '' AND date >= date('now', ? || ' days')
+             WHERE (guild_id = ? OR (guild_id = '' AND user_id IN (
+                 SELECT DISTINCT user_id FROM openai_usage_daily WHERE guild_id = ?
+             )))
+             AND user_id != ''
+             AND date >= date('now', ? || ' days')
              GROUP BY user_id
              ORDER BY cost DESC
              LIMIT ?"
         )?;
         statement.bind((1, guild_id))?;
-        statement.bind((2, format!("-{}", days).as_str()))?;
-        statement.bind((3, limit))?;
+        statement.bind((2, guild_id))?;
+        statement.bind((3, days_str.as_str()))?;
+        statement.bind((4, limit))?;
 
         let mut results = Vec::new();
         while let Ok(State::Row) = statement.next() {
