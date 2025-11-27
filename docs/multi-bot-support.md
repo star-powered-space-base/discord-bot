@@ -58,7 +58,6 @@ pub struct Config {
     pub openai_api_key: String,
     pub database_path: String,
     pub log_level: String,
-    pub discord_public_key: Option<String>, // Only ONE key
 }
 ```
 
@@ -185,9 +184,6 @@ pub struct BotConfig {
     /// Discord bot token
     pub discord_token: String,
 
-    /// Discord public key for interaction verification (HTTP mode)
-    pub discord_public_key: Option<String>,
-
     /// Optional: Default persona for this bot
     pub default_persona: Option<String>,
 }
@@ -228,13 +224,11 @@ bots:
   - bot_id: "muppet"
     name: "Muppet Friend"
     discord_token: "${DISCORD_MUPPET_TOKEN}"
-    discord_public_key: "${DISCORD_MUPPET_PUBLIC_KEY}"
     default_persona: "muppet"
 
   - bot_id: "chef"
     name: "Chef Bot"
     discord_token: "${DISCORD_CHEF_TOKEN}"
-    discord_public_key: "${DISCORD_CHEF_PUBLIC_KEY}"
     default_persona: "chef"
 
   - bot_id: "teacher"
@@ -544,94 +538,6 @@ self.database.method_name(&self.bot_id, /* other params */).await?;
 
 ---
 
-### Phase 5: HTTP Mode Multi-Bot Support (Optional)
-
-If supporting HTTP interaction mode for multiple bots:
-
-#### 5.1 Update HTTP Server
-
-**Current** ([src/bin/http_bot.rs](../src/bin/http_bot.rs)):
-```rust
-// Single bot, single public key
-let config = Config::from_env()?;
-verify_discord_signature(&signature, &timestamp, &body, &public_key)?;
-```
-
-**New**:
-```rust
-// Map application_id -> (bot_id, public_key)
-struct BotRegistry {
-    bots: HashMap<String, (String, String)>,  // app_id -> (bot_id, public_key)
-}
-
-async fn handle_interaction(
-    body: String,
-    signature: String,
-    timestamp: String,
-    registry: Arc<BotRegistry>,
-) -> Result<Response> {
-    // Parse interaction to get application_id
-    let interaction: Interaction = serde_json::from_str(&body)?;
-    let app_id = &interaction.application_id;
-
-    // Look up which bot this is for
-    let (bot_id, public_key) = registry.bots.get(app_id)
-        .ok_or("Unknown application")?;
-
-    // Verify signature with correct public key
-    verify_discord_signature(&signature, &timestamp, &body, public_key)?;
-
-    // Route to correct bot handler with bot_id context
-    handle_command(bot_id, interaction).await
-}
-```
-
-#### 5.2 Single Server, Multiple Bots
-
-```rust
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = MultiConfig::from_file("config.yaml")?;
-
-    // Build registry
-    let mut registry = BotRegistry { bots: HashMap::new() };
-    for bot in &config.bots {
-        if let Some(public_key) = &bot.discord_public_key {
-            // Need to get application_id from Discord API or config
-            let app_id = get_application_id(&bot.discord_token).await?;
-            registry.bots.insert(app_id, (bot.bot_id.clone(), public_key.clone()));
-        }
-    }
-
-    let registry = Arc::new(registry);
-
-    // Single HTTP server on port 6666
-    let app = Router::new()
-        .route("/interactions", post(handle_interaction))
-        .layer(Extension(registry));
-
-    // Start server
-    axum::Server::bind(&"0.0.0.0:6666".parse()?)
-        .serve(app.into_make_service())
-        .await?;
-
-    Ok(())
-}
-```
-
-#### 5.3 Deliverables
-
-- [ ] Bot registry structure
-- [ ] Application ID lookup/configuration
-- [ ] Multi-bot signature verification
-- [ ] Routing by application_id
-- [ ] Update http_bot.rs entry point
-- [ ] Integration tests for multiple bots
-
-**Estimated Time**: 1-2 days
-
----
-
 ## Testing Strategy
 
 ### Unit Tests
@@ -922,10 +828,6 @@ Before implementing, we should decide:
    - Single process for all bots or ability to run separately?
    - Docker container per bot or monolithic?
 
-5. **HTTP Mode Priority**
-   - Implement Phase 5 immediately or wait?
-   - Gateway-only for initial release?
-
 ---
 
 ## Appendix A: File Change Summary
@@ -939,7 +841,6 @@ Before implementing, we should decide:
 | `src/bin/bot.rs` | Multi-client spawning | ~150 | Medium |
 | `src/commands.rs` | Add bot_id context | ~200 | Medium |
 | `src/rate_limiter.rs` | Composite keys | ~50 | Low |
-| `src/bin/http_bot.rs` | Bot registry | ~100 | Medium |
 
 ### New Files Needed
 
@@ -1012,7 +913,6 @@ bots:
   - bot_id: "muppet"
     name: "Muppet Friend"
     discord_token: "${DISCORD_MUPPET_TOKEN}"
-    discord_public_key: "${DISCORD_MUPPET_PUBLIC_KEY}"
     default_persona: "muppet"
 
   # Chef personality bot
@@ -1051,6 +951,6 @@ This implementation plan provides a comprehensive roadmap to enable multi-Discor
 - Backward compatibility during transition
 - Clear separation of shared vs. per-bot resources
 
-**Estimated Total Effort**: ~2 weeks for core implementation (Phases 1-4)
+**Estimated Total Effort**: ~2 weeks for core implementation (Phases 1-4 using Gateway mode)
 
 **Questions?** Review the "Open Questions" section and make decisions before beginning implementation.

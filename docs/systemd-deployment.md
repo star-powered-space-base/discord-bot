@@ -12,7 +12,6 @@ This guide explains how to run the Discord Persona Bot as a systemd service, ens
 
 The project builds multiple binaries:
 - **`bot`** - The main Discord bot (Gateway WebSocket connection) - **USE THIS ONE**
-- **`http_bot`** - HTTP-based bot variant (for webhook-based setups)
 - **`persona`** - Simple test binary (just prints "Hello, world!")
 
 The systemd service is configured to run the `bot` binary.

@@ -9,7 +9,6 @@ pub mod message_components;
 
 // Infrastructure (to be reorganized)
 pub mod database;
-pub mod http_server;
 
 // Application layer
 pub mod command_handler;

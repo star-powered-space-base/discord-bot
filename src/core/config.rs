@@ -8,7 +8,6 @@ pub struct Config {
     pub openai_api_key: String,
     pub database_path: String,
     pub log_level: String,
-    pub discord_public_key: Option<String>,
     pub discord_guild_id: Option<String>,
     pub openai_model: String,
     pub conflict_mediation_enabled: bool,
@@ -25,7 +24,6 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("OPENAI_API_KEY environment variable not set"))?,
             database_path: env::var("DATABASE_PATH").unwrap_or_else(|_| "persona.db".to_string()),
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
-            discord_public_key: env::var("DISCORD_PUBLIC_KEY").ok(),
             discord_guild_id: env::var("DISCORD_GUILD_ID").ok(),
             openai_model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-5.1".to_string()),
             conflict_mediation_enabled: env::var("CONFLICT_MEDIATION_ENABLED")
