@@ -364,6 +364,7 @@ mod tests {
         println!("=== Conversation Analysis ===");
         println!("Is Conflict: {}", is_conflict);
         println!("Confidence: {:.2}", confidence);
+        println!("Conflict Type: {:?}", conflict_type);
         println!("Threshold: 0.3");
         println!("Should trigger: {}", confidence > 0.3);
 

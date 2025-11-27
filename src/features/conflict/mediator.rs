@@ -183,8 +183,6 @@ pub struct MediationStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::sleep;
-
     #[test]
     fn test_mediation_cooldown() {
         let mediator = ConflictMediator::new(3, 0); // 0 minute cooldown for testing
