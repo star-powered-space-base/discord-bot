@@ -1,3 +1,19 @@
+# Environment
 .env
+
+# Build artifacts
 /target
+
+# Database
 *.db
+*.db.backup-*
+
+# Development tools
+ngrok
+
+# Editor/IDE
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
